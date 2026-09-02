@@ -27,18 +27,23 @@ This project is currently in the planning and design phase. The repository conta
 
 ## Development Roadmap
 
-1. Define requirements and system architecture.
-2. Design the data model and processing workflows.
-3. Scaffold the application and infrastructure.
-4. Implement secure Gmail synchronization.
-5. Build and validate the subscription extraction pipeline.
-6. Add persistence, history, renewals, and audit logging.
-7. Create unit, integration, end-to-end, and adversarial tests.
-8. Complete security, engineering, scalability, and release reviews.
+1. [x] Define requirements and system architecture.
+2. [x] Design the data model and processing workflows.
+3. [ ] Scaffold the application and infrastructure.
+4. [ ] Implement secure Gmail synchronization.
+5. [ ] Build and validate the subscription extraction pipeline.
+6. [ ] Add persistence, history, renewals, and audit logging.
+7. [ ] Create unit, integration, end-to-end, and adversarial tests.
+8. [ ] Complete security, engineering, scalability, and release reviews.
 
 ## Development Playbook
 
 See [subscription-tracking-agent-prompts.md](subscription-tracking-agent-prompts.md) for the prompts and review stages used throughout the planned development lifecycle.
+
+## Design Docs
+
+- [docs/architecture.md](docs/architecture.md) — Phase 1 output: initial architecture design and architecture review.
+- [docs/technical-design.md](docs/technical-design.md) — Phase 2 output: database schema, Gmail workflow, extraction pipeline, lifecycle state machine, and alert scheduling (with Mermaid diagrams).
 
 ## Security and Privacy
 
