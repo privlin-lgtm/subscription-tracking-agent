@@ -1,0 +1,219 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  INACTIVE
+  PENDING_REVIEW
+  DISMISSED
+}
+
+enum BillingCycle {
+  WEEKLY
+  MONTHLY
+  ANNUAL
+  CUSTOM
+}
+
+enum EventType {
+  CREATED
+  RENEWED
+  PRICE_CHANGED
+  CANCELED
+  FLAGGED_INACTIVE
+  REACTIVATED
+  REVIEW_CONFIRMED
+  REVIEW_DISMISSED
+}
+
+enum EmailClassification {
+  SUBSCRIPTION
+  NOT_SUBSCRIPTION
+  AMBIGUOUS
+}
+
+enum ReviewDecisionType {
+  CONFIRM
+  DISMISS
+  EDIT_AND_CONFIRM
+}
+
+enum NotificationType {
+  RENEWAL_REMINDER
+  PRICE_INCREASE
+  INACTIVITY
+  GMAIL_DISCONNECTED
+  PENDING_REVIEW
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+}
+
+model User {
+  id                  String    @id @default(cuid())
+  email               String    @unique
+  passwordHash        String
+  gmailRefreshToken   String? // encrypted at the application layer before storage
+  gmailHistoryId      String?
+  gmailConnected      Boolean   @default(false)
+  gmailDisconnectedAt DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @default(now()) @updatedAt
+
+  subscriptions   Subscription[]
+  processedEmails ProcessedEmail[]
+  auditLogs       AuditLog[]
+  notifications   Notification[]
+  emailSnapshots  EmailSnapshot[]
+  reviewDecisions ReviewDecision[]
+}
+
+model Subscription {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  vendorNormalized String
+  vendorRaw        String
+  status           SubscriptionStatus @default(ACTIVE)
+
+  priceAmountCents Int
+  priceCurrency    String // ISO 4217
+  billingCycle     BillingCycle
+
+  nextRenewalDate DateTime?
+  lastSeenEmailId String?
+  confidenceScore Float
+  reviewReason    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  events          SubscriptionEvent[]
+  priceChanges    PriceChange[]
+  reviewDecisions ReviewDecision[]
+  notifications   Notification[]
+
+  @@index([userId, status])
+  @@index([userId, vendorNormalized])
+  @@index([userId, nextRenewalDate])
+}
+
+model SubscriptionEvent {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  eventType     EventType
+  sourceEmailId String?
+  payload       Json
+
+  createdAt DateTime @default(now())
+
+  @@index([subscriptionId, createdAt])
+}
+
+model PriceChange {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  oldAmountCents Int
+  newAmountCents Int
+  currency       String
+
+  detectedAt    DateTime @default(now())
+  sourceEmailId String?
+
+  @@index([subscriptionId, detectedAt])
+}
+
+model ProcessedEmail {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  gmailMessageId String
+  gmailHistoryId String
+  classification EmailClassification
+  processedAt    DateTime            @default(now())
+
+  @@unique([userId, gmailMessageId])
+  @@index([userId, processedAt])
+}
+
+model AuditLog {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  action    String
+  actor     String // "system" | "user"
+  details   Json
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model ReviewDecision {
+  id             String             @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription       @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decision       ReviewDecisionType
+  notes          String?
+  editedPayload  Json?
+  createdAt      DateTime           @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Notification {
+  id             String              @id @default(cuid())
+  userId         String
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId String?
+  subscription   Subscription?       @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  type           NotificationType
+  title          String
+  body           String
+  status         NotificationStatus  @default(UNREAD)
+  idempotencyKey String
+  createdAt      DateTime            @default(now())
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, status, createdAt])
+}
+
+model EmailSnapshot {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gmailMessageId String
+  subject        String
+  sender         String
+  bodyText       String
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  @@unique([userId, gmailMessageId])
+  @@index([expiresAt])
+}
+
+model VendorAlias {
+  id            String @id @default(cuid())
+  alias         String @unique
+  canonicalName String
+
+  @@index([canonicalName])
+}

@@ -298,6 +298,6 @@ These map directly to review findings from Phase 1 that this technical design re
 | #3 Prompt injection needs a concrete mechanism | Fixed prompt template, email content as delimited data only, no tool/action capability given to the model |
 | #4 Vendor merge conflict resolution | Fuzzy-match threshold routes to `pending_review` instead of auto-merge |
 | #9 Confidence score calibration | Deterministic signal adjustments layered on top of LLM-reported confidence |
-| #5 No resolution workflow for `pending_review` | **Still open** — needs a UI/API spec in Phase 3 scaffolding |
-| #6 Mixed-currency reporting guard | **Still open** — needs explicit reporting-layer requirement in Phase 3 |
-| #7 Retention/deletion policy | **Still open** — needs a concrete TTL and deletion flow before Phase 8 security review |
+| #5 No resolution workflow for `pending_review` | **Resolved in Phase 3** — review queue UI (`/reviews`) plus `GET /api/reviews`, `POST /api/reviews/:id/confirm`, and `POST /api/reviews/:id/dismiss`. Confirm can include field edits; dismiss is a terminal `DISMISSED` status with an append-only `ReviewDecision`. |
+| #6 Mixed-currency reporting guard | **Resolved in Phase 3** — `summarizeSpend` and `GET /api/reports/spend` never add amounts across ISO 4217 codes. Mixed-currency users get per-currency totals and `MIXED_CURRENCY_NO_FX`. |
+| #7 Retention/deletion policy | **Partially addressed in Phase 3** — `EmailSnapshot.expiresAt` plus a daily purge job, and cascading deletes on user removal. A documented GDPR TTL/right-to-erasure policy is still required before Phase 8. |
