@@ -14,7 +14,17 @@ export async function requireUserId(): Promise<string | NextResponse> {
 export function jsonError(error: unknown): NextResponse {
   if (error instanceof DomainError) {
     const status =
-      error.code === "NOT_FOUND" ? 404 : error.code === "CONFLICT" ? 409 : error.code === "FORBIDDEN" ? 403 : 400;
+      error.code === "NOT_FOUND"
+        ? 404
+        : error.code === "CONFLICT"
+          ? 409
+          : error.code === "FORBIDDEN"
+            ? 403
+            : error.code === "GMAIL_AUTH"
+              ? 401
+              : error.code === "GMAIL_RATE_LIMIT"
+                ? 429
+                : 400;
     return NextResponse.json({ error: error.message, code: error.code }, { status });
   }
   if (error instanceof ZodError) {

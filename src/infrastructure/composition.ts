@@ -2,7 +2,8 @@ import { appConfig } from "@/shared/config";
 import { AlertJobs } from "@/application/alerts/alert.jobs";
 import { RegisterService } from "@/application/auth/register.service";
 import { ReviewService, SubscriptionService } from "@/application/subscriptions/subscription.service";
-import { GmailSyncService, SubscriptionPipelineService } from "@/application/subscriptions/subscription-pipeline.service";
+import { SubscriptionPipelineService } from "@/application/subscriptions/subscription-pipeline.service";
+import { GmailSyncService } from "@/application/gmail/gmail-sync.service";
 import { AesGcmTokenEncryptor } from "@/infrastructure/crypto/token-encryption";
 import {
   PrismaAuditRepository,
@@ -58,7 +59,18 @@ export function createApp() {
     registerService: new RegisterService(users),
     subscriptionService: new SubscriptionService(subscriptions, audit),
     reviewService: new ReviewService(subscriptions, reviews, audit),
-    gmailSync: new GmailSyncService(users, gmail, encryptor, pipeline, notifications, systemClock),
+    gmailSync: new GmailSyncService(
+      users,
+      processedEmails,
+      gmail,
+      encryptor,
+      pipeline,
+      notifications,
+      audit,
+      systemClock,
+      appConfig.gmailLookbackMonths,
+      appConfig.gmailMaxLookbackMessages,
+    ),
     alertJobs: new AlertJobs(
       users,
       subscriptions,

@@ -1,8 +1,8 @@
 import { EmailClassification, EventType, SubscriptionStatus } from "@prisma/client";
-import { ConflictError, NotFoundError, ValidationError } from "@/domain/errors";
+import type { Clock, ExtractionAgent, ExtractionResult, GmailClient, GmailMessage, TokenEncryptor } from "@/domain/ports";
 import { Money } from "@/domain/value-objects/money";
 import { isIso4217 } from "@/shared/iso-4217";
-import type { Clock, ExtractionAgent, GmailClient, TokenEncryptor } from "@/domain/ports";
+import { ConflictError } from "@/domain/errors";
 import type {
   AuditRepository,
   CreateSubscriptionInput,
@@ -18,7 +18,6 @@ import { calibrateConfidence } from "@/application/extraction/confidence-calibra
 import { passesSubscriptionPrefilter } from "@/application/gmail/gmail-prefilter";
 import { matchSubscription } from "@/application/subscriptions/matching.service";
 import { toBillingCycle, VendorNormalizationService } from "@/application/subscriptions/vendor-normalization.service";
-import type { ExtractionResult } from "@/domain/ports";
 
 type PipelineDeps = {
   users: UserRepository;
@@ -44,18 +43,10 @@ export class SubscriptionPipelineService {
     this.vendors = new VendorNormalizationService(deps.vendorAliases, deps.fuzzyThreshold);
   }
 
-  async processMessage(userId: string, messageId: string, historyId: string): Promise<void> {
-    if (await this.deps.processedEmails.exists(userId, messageId)) {
+  async processMessage(userId: string, message: GmailMessage, historyId: string): Promise<void> {
+    if (await this.deps.processedEmails.exists(userId, message.id)) {
       return;
     }
-
-    const user = await this.deps.users.findById(userId);
-    if (!user?.gmailRefreshToken) {
-      throw new ValidationError("Gmail is not connected");
-    }
-
-    const refreshToken = this.deps.encryptor.decrypt(user.gmailRefreshToken);
-    const message = await this.deps.gmail.getMessage(refreshToken, messageId);
 
     if (!passesSubscriptionPrefilter({
       subject: message.subject,
@@ -64,7 +55,7 @@ export class SubscriptionPipelineService {
     })) {
       await this.deps.processedEmails.record({
         userId,
-        gmailMessageId: messageId,
+        gmailMessageId: message.id,
         gmailHistoryId: historyId,
         classification: EmailClassification.NOT_SUBSCRIPTION,
       });
@@ -75,7 +66,7 @@ export class SubscriptionPipelineService {
     expiresAt.setDate(expiresAt.getDate() + this.deps.snapshotTtlDays);
     await this.deps.snapshots.save({
       userId,
-      gmailMessageId: messageId,
+      gmailMessageId: message.id,
       subject: message.subject,
       sender: message.sender,
       bodyText: message.bodyText.slice(0, 8000),
@@ -90,7 +81,7 @@ export class SubscriptionPipelineService {
         bodyText: message.bodyText,
       });
     } catch {
-      await this.createPendingReview(userId, messageId, historyId, {
+      await this.createPendingReview(userId, message.id, historyId, {
         vendorRaw: message.sender,
         vendorNormalized: message.sender,
         reason: "extraction_failed",
@@ -117,7 +108,7 @@ export class SubscriptionPipelineService {
     if (!extraction.isSubscription && calibrated.confidence >= this.deps.autoApplyThreshold) {
       await this.deps.processedEmails.record({
         userId,
-        gmailMessageId: messageId,
+        gmailMessageId: message.id,
         gmailHistoryId: historyId,
         classification: EmailClassification.NOT_SUBSCRIPTION,
       });
@@ -125,7 +116,7 @@ export class SubscriptionPipelineService {
     }
 
     if (needsReview) {
-      await this.createPendingReview(userId, messageId, historyId, {
+      await this.createPendingReview(userId, message.id, historyId, {
         vendorRaw: extraction.vendor,
         vendorNormalized: vendor.canonical,
         reason: calibrated.reviewReason ?? "low_confidence",
@@ -145,7 +136,7 @@ export class SubscriptionPipelineService {
     });
 
     if (decision.kind === "currency_mismatch") {
-      await this.createPendingReview(userId, messageId, historyId, {
+      await this.createPendingReview(userId, message.id, historyId, {
         vendorRaw: extraction.vendor,
         vendorNormalized: vendor.canonical,
         reason: "currency_mismatch_across_renewals",
@@ -158,7 +149,7 @@ export class SubscriptionPipelineService {
     if (decision.kind === "duplicate") {
       await this.deps.processedEmails.record({
         userId,
-        gmailMessageId: messageId,
+        gmailMessageId: message.id,
         gmailHistoryId: historyId,
         classification: EmailClassification.SUBSCRIPTION,
       });
@@ -175,40 +166,40 @@ export class SubscriptionPipelineService {
         priceCurrency: money.currency,
         billingCycle: toBillingCycle(extraction.billingCycle),
         nextRenewalDate: extraction.renewalDate,
-        lastSeenEmailId: messageId,
+        lastSeenEmailId: message.id,
         confidenceScore: calibrated.confidence,
       });
       await this.deps.subscriptions.appendEvent({
         subscriptionId: created.id,
         eventType: EventType.CREATED,
-        sourceEmailId: messageId,
+        sourceEmailId: message.id,
         payload: extraction as unknown as object,
       });
     } else if (decision.kind === "renewal") {
       await this.deps.subscriptions.update(decision.subscription.id, {
         nextRenewalDate: extraction.renewalDate,
-        lastSeenEmailId: messageId,
+        lastSeenEmailId: message.id,
         status: SubscriptionStatus.ACTIVE,
         confidenceScore: calibrated.confidence,
       });
       await this.deps.subscriptions.appendEvent({
         subscriptionId: decision.subscription.id,
         eventType: EventType.RENEWED,
-        sourceEmailId: messageId,
+        sourceEmailId: message.id,
         payload: extraction as unknown as object,
       });
     } else {
       await this.deps.subscriptions.update(decision.subscription.id, {
         priceAmountCents: money.amountCents,
         nextRenewalDate: extraction.renewalDate,
-        lastSeenEmailId: messageId,
+        lastSeenEmailId: message.id,
         status: SubscriptionStatus.ACTIVE,
         confidenceScore: calibrated.confidence,
       });
       await this.deps.subscriptions.appendEvent({
         subscriptionId: decision.subscription.id,
         eventType: EventType.PRICE_CHANGED,
-        sourceEmailId: messageId,
+        sourceEmailId: message.id,
         payload: extraction as unknown as object,
       });
       await this.deps.subscriptions.recordPriceChange({
@@ -216,7 +207,7 @@ export class SubscriptionPipelineService {
         oldAmountCents: decision.subscription.priceAmountCents,
         newAmountCents: money.amountCents,
         currency: money.currency,
-        sourceEmailId: messageId,
+        sourceEmailId: message.id,
       });
       await this.deps.notifications.createIfAbsent({
         userId,
@@ -224,13 +215,13 @@ export class SubscriptionPipelineService {
         type: "PRICE_INCREASE",
         title: `Price change: ${vendor.canonical}`,
         body: `${vendor.canonical} changed from ${decision.subscription.priceAmountCents} to ${money.amountCents} ${money.currency} minor units.`,
-        idempotencyKey: `price:${decision.subscription.id}:${messageId}`,
+        idempotencyKey: `price:${decision.subscription.id}:${message.id}`,
       });
     }
 
     await this.deps.processedEmails.record({
       userId,
-      gmailMessageId: messageId,
+      gmailMessageId: message.id,
       gmailHistoryId: historyId,
       classification: EmailClassification.SUBSCRIPTION,
     });
@@ -238,7 +229,7 @@ export class SubscriptionPipelineService {
       userId,
       action: "subscription.pipeline.apply",
       actor: "system",
-      details: { messageId, vendor: vendor.canonical, decision: decision.kind },
+      details: { messageId: message.id, vendor: vendor.canonical, decision: decision.kind },
     });
   }
 
@@ -307,72 +298,4 @@ function pendingReviewMoney(extraction?: ExtractionResult): { amountCents: numbe
     amountCents: Money.fromMajor(extraction.priceAmount, extraction.currency).amountCents,
     currency: extraction.currency.toUpperCase(),
   };
-}
-
-export class GmailSyncService {
-  constructor(
-    private readonly users: UserRepository,
-    private readonly gmail: GmailClient,
-    private readonly encryptor: TokenEncryptor,
-    private readonly pipeline: SubscriptionPipelineService,
-    private readonly notifications: NotificationRepository,
-    private readonly clock: Clock,
-  ) {}
-
-  async syncUser(userId: string): Promise<{ processed: number }> {
-    const user = await this.users.findById(userId);
-    if (!user) {
-      throw new NotFoundError("User", userId);
-    }
-    if (!user.gmailConnected || !user.gmailRefreshToken) {
-      throw new ValidationError("Gmail is not connected");
-    }
-
-    const refreshToken = this.encryptor.decrypt(user.gmailRefreshToken);
-    let messageIds: string[] = [];
-    let latestHistoryId = user.gmailHistoryId ?? "";
-
-    if (user.gmailHistoryId) {
-      const history = await this.gmail.listHistory(refreshToken, user.gmailHistoryId);
-      if (history.expired) {
-        const after = new Date(this.clock.now());
-        after.setMonth(after.getMonth() - 12);
-        messageIds = await this.gmail.listMessagesLookback(refreshToken, after);
-      } else {
-        messageIds = history.messageIds;
-        latestHistoryId = history.latestHistoryId;
-      }
-    } else {
-      const after = new Date(this.clock.now());
-      after.setMonth(after.getMonth() - 12);
-      messageIds = await this.gmail.listMessagesLookback(refreshToken, after);
-    }
-
-    let processed = 0;
-    for (const messageId of messageIds) {
-      await this.pipeline.processMessage(userId, messageId, latestHistoryId || messageId);
-      processed += 1;
-    }
-
-    if (latestHistoryId) {
-      await this.users.updateHistoryId(userId, latestHistoryId);
-    }
-
-    return { processed };
-  }
-
-  async markDisconnected(userId: string): Promise<void> {
-    await this.users.updateGmailConnection(userId, {
-      gmailConnected: false,
-      gmailRefreshToken: null,
-      gmailDisconnectedAt: this.clock.now(),
-    });
-    await this.notifications.createIfAbsent({
-      userId,
-      type: "GMAIL_DISCONNECTED",
-      title: "Gmail disconnected",
-      body: "Reconnect Gmail to resume subscription scanning.",
-      idempotencyKey: `gmail-disconnected:${userId}:${this.clock.now().toISOString().slice(0, 10)}`,
-    });
-  }
 }

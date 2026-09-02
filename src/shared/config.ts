@@ -26,4 +26,7 @@ export const appConfig = {
   emailSnapshotTtlDays: numberEnv("EMAIL_SNAPSHOT_TTL_DAYS", 30),
   inactivityGraceCycles: numberEnv("INACTIVITY_GRACE_CYCLES", 2),
   renewalReminderDays: numberEnv("RENEWAL_REMINDER_DAYS", 7),
+  gmailLookbackMonths: numberEnv("GMAIL_LOOKBACK_MONTHS", 12),
+  gmailMaxLookbackMessages: numberEnv("GMAIL_MAX_LOOKBACK_MESSAGES", 500),
+  gmailMaxRetries: numberEnv("GMAIL_MAX_RETRIES", 5),
 };

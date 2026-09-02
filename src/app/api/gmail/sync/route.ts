@@ -9,7 +9,10 @@ export async function POST() {
   }
   try {
     const result = await app.locks.withUserLock(userId, () => app.gmailSync.syncUser(userId));
-    return NextResponse.json(result ?? { processed: 0, skipped: true });
+    if (!result) {
+      return NextResponse.json({ processed: 0, skipped: true, reason: "lock_not_acquired" });
+    }
+    return NextResponse.json(result);
   } catch (error) {
     return jsonError(error);
   }

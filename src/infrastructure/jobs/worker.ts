@@ -1,4 +1,5 @@
 import cron from "node-cron";
+import { GmailAuthError } from "@/domain/errors";
 import { createApp } from "@/infrastructure/composition";
 
 async function run(): Promise<void> {
@@ -19,7 +20,14 @@ async function run(): Promise<void> {
   cron.schedule("*/15 * * * *", async () => {
     const userIds = await app.users.listConnectedUserIds();
     for (const userId of userIds) {
-      await app.locks.withUserLock(userId, () => app.gmailSync.syncUser(userId));
+      try {
+        await app.locks.withUserLock(userId, () => app.gmailSync.syncUser(userId));
+      } catch (error) {
+        if (error instanceof GmailAuthError) {
+          continue;
+        }
+        console.error(`Gmail sync failed for user ${userId}:`, error instanceof Error ? error.message : "unknown");
+      }
     }
   });
 
@@ -27,6 +35,6 @@ async function run(): Promise<void> {
 }
 
 run().catch((error: unknown) => {
-  console.error(error);
+  console.error(error instanceof Error ? error.message : "worker failed");
   process.exit(1);
 });

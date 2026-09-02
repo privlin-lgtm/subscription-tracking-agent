@@ -8,7 +8,7 @@ export async function POST() {
     return userId;
   }
   try {
-    await app.gmailSync.markDisconnected(userId);
+    await app.gmailSync.disconnect(userId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return jsonError(error);

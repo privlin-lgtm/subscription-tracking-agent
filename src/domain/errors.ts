@@ -31,3 +31,18 @@ export class ValidationError extends DomainError {
     super("VALIDATION", message);
   }
 }
+
+export class GmailAuthError extends DomainError {
+  constructor(message = "Gmail authorization is invalid or revoked") {
+    super("GMAIL_AUTH", message);
+  }
+}
+
+export class GmailRateLimitError extends DomainError {
+  readonly retryAfterMs: number;
+
+  constructor(retryAfterMs = 1000, message = "Gmail rate limit exceeded") {
+    super("GMAIL_RATE_LIMIT", message);
+    this.retryAfterMs = retryAfterMs;
+  }
+}

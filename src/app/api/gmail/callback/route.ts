@@ -1,8 +1,14 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { auth } from "@/infrastructure/auth/auth";
 import { app } from "@/infrastructure/composition";
-import { exchangeGmailCode } from "@/infrastructure/gmail/gmail.client";
-import { jsonError } from "@/infrastructure/http/api";
+import { appConfig } from "@/shared/config";
+import { exchangeGmailCode, GMAIL_PKCE_COOKIE } from "@/infrastructure/gmail/gmail.client";
+import { verifyOAuthState } from "@/infrastructure/gmail/oauth-state";
+
+function denied(request: Request) {
+  return NextResponse.redirect(new URL("/settings?gmail=denied", request.url));
+}
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -14,21 +20,23 @@ export async function GET(request: Request) {
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const error = url.searchParams.get("error");
+  const cookieStore = await cookies();
+  const codeVerifier = cookieStore.get(GMAIL_PKCE_COOKIE)?.value;
 
-  if (error || !code || state !== session.user.id) {
-    return NextResponse.redirect(new URL("/settings?gmail=denied", request.url));
+  if (error || !code || !state || !codeVerifier) {
+    return denied(request);
   }
 
   try {
-    const refreshToken = await exchangeGmailCode(code);
-    const encrypted = app.encryptor.encrypt(refreshToken);
-    await app.users.updateGmailConnection(session.user.id, {
-      gmailRefreshToken: encrypted,
-      gmailConnected: true,
-      gmailDisconnectedAt: null,
-    });
-    return NextResponse.redirect(new URL("/settings?gmail=connected", request.url));
-  } catch (err) {
-    return jsonError(err);
+    verifyOAuthState(state, session.user.id, appConfig.authSecret);
+    const refreshToken = await exchangeGmailCode(code, codeVerifier);
+    await app.gmailSync.connect(session.user.id, refreshToken);
+    const response = NextResponse.redirect(new URL("/settings?gmail=connected", request.url));
+    response.cookies.set(GMAIL_PKCE_COOKIE, "", { path: "/api/gmail", maxAge: 0 });
+    return response;
+  } catch {
+    const response = denied(request);
+    response.cookies.set(GMAIL_PKCE_COOKIE, "", { path: "/api/gmail", maxAge: 0 });
+    return response;
   }
 }

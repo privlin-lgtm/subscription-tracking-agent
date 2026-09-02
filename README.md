@@ -4,7 +4,7 @@ AI-powered subscription tracker that scans Gmail invoices and receipts to automa
 
 ## Project Status
 
-Phase 3 scaffolding is in place: Next.js app, Prisma schema, authentication, Gmail/LLM ports, subscription services, review queue, reporting guard, background jobs, and unit tests.
+Phase 4 Gmail integration is in place: read-only OAuth with PKCE and signed state, encrypted refresh tokens, incremental `historyId` sync, rate-limit retries, and metadata-first filtering so only relevant messages are fully fetched.
 
 ## Stack
 
@@ -53,14 +53,14 @@ npm run worker
 - **Pending review workflow**: low-confidence items become `PENDING_REVIEW` subscriptions. Users confirm or dismiss them from `/reviews` (`POST /api/reviews/:id/confirm|dismiss`). Confirm may include edits. Dismiss is terminal (`DISMISSED`).
 - **Mixed-currency reporting**: spend totals are grouped by ISO 4217 code and never summed across currencies. The dashboard and `GET /api/reports/spend` return `MIXED_CURRENCY_NO_FX` when more than one currency is present.
 - **Email snapshots**: truncated source text is stored with `expiresAt` (default 30 days) and purged by the worker. Full-account deletion cascades via Prisma.
-- **Gmail/LLM**: production-shaped ports and adapters are wired; OAuth hardening and extraction calibration continue in later phases.
+- **Gmail/LLM**: Gmail OAuth is read-only (`gmail.readonly`) with PKCE, HMAC-signed state, AES-GCM refresh-token storage, incremental history sync, and exponential backoff on 429s. Extraction calibration continues in Phase 5.
 
 ## Development Roadmap
 
 1. [x] Define requirements and system architecture.
 2. [x] Design the data model and processing workflows.
 3. [x] Scaffold the application and infrastructure.
-4. [ ] Implement secure Gmail synchronization.
+4. [x] Implement secure Gmail synchronization.
 5. [ ] Build and validate the subscription extraction pipeline.
 6. [ ] Add persistence, history, renewals, and audit logging.
 7. [ ] Create unit, integration, end-to-end, and adversarial tests.

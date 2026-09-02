@@ -1,10 +1,13 @@
-export type GmailMessage = {
+export type GmailMessageMeta = {
   id: string;
   historyId: string;
   threadId: string;
   subject: string;
   sender: string;
   snippet: string;
+};
+
+export type GmailMessage = GmailMessageMeta & {
   bodyText: string;
   internalDate: Date;
 };
@@ -17,8 +20,11 @@ export type HistorySyncResult = {
 
 export interface GmailClient {
   listHistory(refreshToken: string, startHistoryId: string): Promise<HistorySyncResult>;
-  listMessagesLookback(refreshToken: string, after: Date): Promise<string[]>;
+  listRelevantMessages(refreshToken: string, after: Date, maxResults: number): Promise<string[]>;
+  getMetadata(refreshToken: string, messageId: string): Promise<GmailMessageMeta>;
   getMessage(refreshToken: string, messageId: string): Promise<GmailMessage>;
+  getProfileHistoryId(refreshToken: string): Promise<string>;
+  revokeRefreshToken(refreshToken: string): Promise<void>;
 }
 
 export type ExtractionInput = {
