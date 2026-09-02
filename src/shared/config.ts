@@ -30,4 +30,5 @@ export const appConfig = {
   gmailLookbackMonths: numberEnv("GMAIL_LOOKBACK_MONTHS", 12),
   gmailMaxLookbackMessages: numberEnv("GMAIL_MAX_LOOKBACK_MESSAGES", 500),
   gmailMaxRetries: numberEnv("GMAIL_MAX_RETRIES", 5),
+  gmailSyncConcurrency: numberEnv("GMAIL_SYNC_CONCURRENCY", 10),
 };

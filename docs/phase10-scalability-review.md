@@ -1,0 +1,67 @@
+# Phase 10 — Scalability Review
+
+*Phase 10 output (tool: Claude), per [subscription-tracking-agent-prompts.md](../subscription-tracking-agent-prompts.md). Assumes 10,000 users. Reviews architecture, reliability, scaling strategy, database load, Gmail API quotas, cost model, and background processing design, and identifies launch blockers with proposed solutions — two of which are fixed in this pass, the rest requiring an infrastructure/ops decision this review can flag but not make unilaterally.*
+
+---
+
+## Launch Blockers
+
+| # | Blocker | Area | Status |
+|---|---|---|---|
+| L1 | Advisory lock's acquire/release could run on different pooled connections, silently leaking the lock | Reliability | **Fixed** |
+| L2 | Gmail sync loop was fully serial across users — doesn't complete within its own scheduling interval at 10k users | Scaling strategy | **Fixed** |
+| L3 | Scheduled jobs had no overlap guard — a slow run could still be in progress when the next tick fires | Reliability | **Fixed** |
+| L4 | A single Google Cloud project's Gmail API quota is shared across every user | Gmail API quotas | **Not fixable in code** — ops/infrastructure decision |
+| L5 | Worker is a single process with no horizontal-scaling story for the alert jobs specifically | Background processing design | Documented, not fixed (not yet needed at 1 replica) |
+
+---
+
+## L1 — Advisory lock acquire/release on mismatched pooled connections
+
+**The finding:** `PostgresAdvisoryLock.withUserLock` called `prisma.$queryRaw` once to acquire (`pg_try_advisory_lock`) and again to release (`pg_advisory_unlock`). Postgres session-level advisory locks are tied to the specific connection that took them — `pg_advisory_unlock` only releases the lock if invoked on that same connection, and silently returns `false` (a no-op) otherwise. `PrismaClient` maintains an internal connection pool, and nothing in the original code pinned both calls to the same pooled connection. In practice this means the unlock call was likely a silent no-op most of the time, and the lock would leak until the specific connection that happened to acquire it was recycled by the pool — at which point `pg_try_advisory_lock` for that user would keep failing (return false, meaning "already held"), **silently disabling Gmail sync for that user** until the connection cycled.
+- **Severity:** High for reliability (this is a correctness bug independent of user count — it could manifest with a single user, though it becomes more visible and more damaging as user count and sync frequency grow, since more locks are being taken and connections cycle more under load)
+- **Confidence:** High, based on documented Postgres advisory-lock semantics (session-scoped, connection-tied) and Prisma's documented pooling behavior for `$queryRaw`. **Not verified against a live database in this session** — this repo's own `docker-compose.yml` Postgres could not be reached on `localhost:5432` because another, unrelated Postgres instance already had that port bound on this machine; spinning up an isolated verification environment wasn't safely possible here without either colliding with that unrelated service or leaving unclear state behind, so the fix was made and reasoned from documented semantics rather than reproduced. **Recommend a live integration test against a real Postgres instance before this ships**, exercising exactly this: acquire, confirm a second `pg_try_advisory_lock` for the same key fails while held, release, confirm a third attempt now succeeds.
+- **Fix:** `withUserLock` now wraps acquire/work/release in `prisma.$transaction(async (tx) => {...}, { timeout: 5 minutes })`. An interactive transaction pins every query inside it to one connection for its whole duration — exactly what a session-scoped advisory lock needs — and the `BEGIN`/`COMMIT` Prisma adds around it doesn't interact with non-`_xact_` advisory locks, which are deliberately independent of SQL transaction boundaries. The 5-minute timeout accommodates a slow sync without Prisma's default (much shorter) transaction timeout aborting it mid-flight.
+
+## L2 — Gmail sync loop was fully serial
+
+**The finding:** `worker.ts`'s `*/15 * * * *` cron job looped over every connected user's sync one at a time: `for (const userId of userIds) { await ...syncUser(userId) }`. At 10,000 users, even a conservative 1 second per user (network round trip plus processing) means roughly 2.8 hours to complete one pass — far longer than the 15-minute interval it's scheduled on. The job would never catch up; every scheduled tick would start while the previous one was still deep into the user list (compounded by **L3**, since nothing stopped overlapping runs either).
+- **Severity:** High — this is the standout, quantified scalability blocker of the whole review. Everything else in the system (extraction, matching, persistence) is bounded per-message; this loop was the one place work scaled linearly with total user count in a single sequential pass.
+- **Fix:** the loop now uses a small worker-pool helper (`shared/concurrency.ts`, `runWithConcurrency`) with a configurable concurrency (`GMAIL_SYNC_CONCURRENCY`, default 10), so up to 10 users' syncs run at once instead of one at a time — roughly a 10x reduction in wall-clock time for the same work, tunable per deployment without a code change. Per-user error isolation (one user's failure doesn't affect others) and the existing per-user advisory lock are preserved exactly as before, just inside the pooled callback instead of a serial loop.
+- **This alone is not sufficient at 10,000 users** — 10x concurrency brings ~2.8 hours down to ~17 minutes, still over the 15-minute interval. **Recommendation:** either raise `GMAIL_SYNC_CONCURRENCY` further (bounded by Gmail API rate limits and outbound connection capacity, not code), lengthen the sync interval as user count grows, or move to a proper job queue (see L5) where sync jobs are distributed across multiple worker processes rather than one process's concurrency limit. This review deliberately doesn't pick a specific number, since the right value depends on real per-request latency and Gmail's actual rate-limit behavior in production, neither of which is measurable in this environment.
+
+## L3 — No overlap guard on scheduled jobs
+
+**The finding:** `node-cron`'s `cron.schedule` fires on its interval regardless of whether the previous invocation's callback has finished. Combined with L2, this meant a slow sync run and the next scheduled run could execute concurrently, each independently listing connected users and looping — wasted duplicate query and iteration overhead at minimum, and (before L1's fix) potentially masking further lock-related issues.
+- **Severity:** Medium (amplifies L1 and L2 rather than being independently dangerous — the per-user advisory lock already prevented double-processing of the *same* user, so this was inefficiency, not data corruption)
+- **Fix:** `runJob` now tracks in-flight job names in a `Set` and skips (logging, not silently) a tick that would overlap the still-running previous one. **This guard is single-process only** — it does nothing to prevent two *separate worker replicas* from running the same job simultaneously. That's fine at today's single-replica deployment; see L5 for what changes if that ever changes.
+
+## L4 — Gmail API quota is shared across all users via one Google Cloud project
+
+**The finding:** every user's Gmail access goes through the same `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, meaning every user's API calls draw from the *same* project-wide Gmail API quota (Google enforces both per-user and project-wide daily quota limits). At 10,000 users syncing every 15 minutes, that's a minimum of 10,000 × 96 = 960,000 "check for updates" API calls per day even when nothing changed for most users — before counting the additional calls to fetch metadata and full message bodies for anything that looks relevant. This is very plausibly enough to hit Google's default project-wide quota well before reaching 10,000 users, independent of anything in this codebase.
+- **Severity:** High as a launch blocker at the stated scale, but **not something a code change can fix** — it requires either (a) requesting a quota increase from Google for the project, (b) sharding users across multiple Google Cloud projects/OAuth clients, or (c) reducing polling frequency / moving to Gmail push notifications (`users.watch` + Pub/Sub) instead of interval polling, which would also cut the 960k-calls/day baseline dramatically since it only fires on actual inbox changes.
+- **Recommendation:** this needs an explicit go/no-go decision and lead time (quota increase requests and any push-notification migration both take real calendar time) before a 10,000-user launch — flagging it here as the review's job; making that call is outside this review's scope.
+
+## L5 — Single-process worker, no distributed-scheduling story
+
+**The finding:** the whole background-job story (renewal reminders, inactivity scan, purges, Gmail sync) runs in one Node process via `node-cron`. This is a legitimate, simple design at moderate scale, and L1–L3's fixes make it correct at that scale. It has a ceiling: running a second worker replica (for redundancy, or because one process can't keep up with L2's concurrency limits alone) would cause both replicas to independently fire the same cron schedules. The per-user Gmail sync lock (`app.locks`) already handles that case correctly (a second replica's attempt on a locked user simply returns `null` and moves on) — but `runRenewalReminders`, `runInactivityScan`, and the two purge jobs have no equivalent lock, so two replicas would both run them, each doing the same batched query and (mitigated by `createIfAbsent`'s idempotency key for notifications, but not for the `applyWrite` state mutation itself in `runInactivityScan`) potentially double-applying the same status/event transition.
+- **Severity:** Low today (single replica in the current deployment model — this is a "when you scale the *worker* horizontally" concern, not a "when you have 10,000 users" one by itself, since one replica can serve 10,000 users given L2's fix and adequate concurrency tuning)
+- **Not fixed in this pass** — deliberately: adding a global per-job advisory lock (the same pattern as `app.locks`, just keyed by job name instead of user ID) is straightforward *if and when* a second replica is actually planned, and building it speculatively now, untested against the actual multi-replica scenario, isn't better than building it when it's real. Flagged here so it's a known, deliberate gap rather than a surprise later.
+
+---
+
+## Database Load at 10,000 Users
+
+Covered in depth by [Phase 6's review](phase6-database-review.md) (all findings fixed): batched renewal/staleness queries instead of per-user loops, transactional writes, indexed access patterns matching actual query shapes. At 10,000 users with a handful of subscriptions each (tens to low hundreds of thousands of `Subscription` rows, more for `SubscriptionEvent`/`PriceChange` history), none of that changes qualitatively — the fixes already made are exactly the ones that keep this from scaling linearly with user count in the wrong places.
+
+One item worth naming that wasn't in Phase 6's scope: `DATABASE_URL` in `.env.example` doesn't set an explicit `connection_limit`, so Prisma falls back to its default pool sizing (roughly `num_physical_cpus * 2 + 1` per process). With L2's added concurrency (10 simultaneous Gmail syncs, each doing DB reads/writes) plus the scheduled jobs plus ordinary web traffic all sharing one pool, this is worth an explicit, deliberately-chosen `connection_limit` in production rather than the implicit default — a configuration decision, not a code defect, so not changed here.
+
+## Cost Model
+
+- **LLM cost**: bounded by the prefilter (Phase 1/5 decision) — only messages matching a subscription-billing signal reach the model at all. Not re-quantified here; no new information changes that analysis at 10,000 users beyond "more users means more prefiltered-in messages, linearly."
+- **Gmail API cost**: free within quota, but the quota *itself* is the real constraint — see L4. The 960k-calls/day baseline above is the number that should drive any conversation about polling frequency or push notifications, not a dollar cost.
+- **Compute/hosting**: not meaningfully changed by this review's fixes — L2's concurrency increase adds parallel outbound HTTP load but not more total work, and L1/L3 remove wasted duplicate work rather than adding any.
+
+## Background Processing Design — Summary
+
+The cron-based, single-process design (Phase 1's original choice) is appropriate for launch at 10,000 users **once L1–L3 are fixed**, with L5 as a known, explicit ceiling rather than an unknown one. A move to a proper distributed job queue (BullMQ, SQS, or similar) is the natural next step past that ceiling, but isn't a launch blocker at the stated scale — introducing that infrastructure speculatively now, without the concrete multi-replica need driving its design, would be scope this review doesn't recommend taking on yet.

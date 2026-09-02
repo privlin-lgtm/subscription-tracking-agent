@@ -90,6 +90,12 @@ npm run worker
 
 - **Engineering review, no critical/major issues found** (see [docs/phase9-engineering-review.md](docs/phase9-engineering-review.md)): an independent pass beyond Phases 5/6/8's narrower lenses found and fixed three minor issues — a dead unreachable branch in `matchSubscription` (now an explicit assertion instead of a silent guess), a currency-conversion helper (`minorToMajorUnits`) that existed but was unused while two call sites duplicated the same math incorrectly for non-2-decimal currencies (closes [Phase 5 finding V4](docs/phase5-extraction-validation.md)), and two untested defensive error branches. Current coverage: 97.78% lines, 88.59% branches, 93.47% functions, 228 tests.
 
+## Phase 10 decisions
+
+- **Scalability review (10,000-user assumption), two code-fixable blockers fixed** (see [docs/phase10-scalability-review.md](docs/phase10-scalability-review.md)): the Postgres advisory lock's acquire/release could run on different pooled connections, likely making the unlock a silent no-op and leaking the lock until that connection cycled — silently disabling Gmail sync for that user. Fixed by pinning both calls to one connection via `prisma.$transaction`. The Gmail-sync worker loop was fully serial across users (~2.8 hours for 10k users at 1s/user, far longer than its own 15-minute schedule) — now runs with configurable bounded concurrency (`GMAIL_SYNC_CONCURRENCY`, default 10) via a new `runWithConcurrency` helper. Scheduled jobs also gained an overlap guard (skip a tick if the previous run is still in progress).
+- **Not code-fixable**: a single Google Cloud project's Gmail API quota is shared across every user — back-of-envelope, 10k users on a 15-minute poll is ~960k API calls/day minimum, plausibly enough to hit quota well before 10k users. Needs a quota increase, sharding across projects, or a move to Gmail push notifications (`users.watch`) — an infrastructure/ops decision, not a code change.
+- **Documented, not fixed**: the worker is a single process with no distributed-scheduling story if ever run as multiple replicas (the per-user Gmail sync lock already handles that case; the alert/purge jobs don't yet). Not needed at one replica, flagged as a known ceiling rather than a surprise.
+
 ## Development Roadmap
 
 1. [x] Define requirements and system architecture.
@@ -116,6 +122,7 @@ See [subscription-tracking-agent-prompts.md](subscription-tracking-agent-prompts
 - [docs/phase8-security-review.md](docs/phase8-security-review.md) — Phase 8 output: risk matrix covering OAuth, stored credentials, prompt injection, sensitive data exposure, logging, and retention, with severity ratings.
 - [docs/phase8-prompt-injection-testing.md](docs/phase8-prompt-injection-testing.md) — Phase 8 output: malicious-email examples (prompt injections, jailbreaks, hidden instructions, HTML-based and embedded-content attacks) and the defense each one exercises.
 - [docs/phase9-engineering-review.md](docs/phase9-engineering-review.md) — Phase 9 output: principal-engineer review (critical/major/minor issues, refactoring suggestions, test coverage, architecture alignment, release recommendation).
+- [docs/phase10-scalability-review.md](docs/phase10-scalability-review.md) — Phase 10 output: scalability review at a 10,000-user assumption, covering architecture, reliability, scaling strategy, database load, Gmail API quotas, cost model, and background processing, with launch blockers and fixes/recommendations.
 
 ## Security and Privacy
 
