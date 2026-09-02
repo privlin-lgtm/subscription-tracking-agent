@@ -6,6 +6,7 @@ describe("extraction schema", () => {
     const result = parseLlmExtraction(
       {
         is_subscription: true,
+        is_cancellation: false,
         vendor: "Netflix",
         price: { amount: 15.49, currency: "usd" },
         billing_cycle: "monthly",
@@ -23,6 +24,7 @@ describe("extraction schema", () => {
     const result = parseLlmExtraction(
       {
         is_subscription: true,
+        is_cancellation: false,
         vendor: "Netflix",
         price: { amount: 10, currency: "USD" },
         billing_cycle: "monthly",
@@ -38,6 +40,7 @@ describe("extraction schema", () => {
     const result = parseLlmExtraction(
       {
         is_subscription: true,
+        is_cancellation: false,
         vendor: "Netflix",
         price: { amount: 10, currency: "USD" },
         billing_cycle: "monthly",
@@ -47,5 +50,21 @@ describe("extraction schema", () => {
       new Date("2026-09-02"),
     );
     expect(result.renewalDate).toBeNull();
+  });
+
+  it("parses a cancellation payload that omits price and date detail", () => {
+    const result = parseLlmExtraction(
+      {
+        is_subscription: true,
+        is_cancellation: true,
+        vendor: "Netflix",
+        price: { amount: 0, currency: "USD" },
+        billing_cycle: "unknown",
+        renewal_date: null,
+        confidence: 0.9,
+      },
+      new Date("2026-09-02"),
+    );
+    expect(result.isCancellation).toBe(true);
   });
 });

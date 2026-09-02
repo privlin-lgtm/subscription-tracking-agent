@@ -31,9 +31,10 @@ export const KNOWN_BILLING_DOMAINS = [
 export const EXTRACTION_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["is_subscription", "vendor", "price", "billing_cycle", "renewal_date", "confidence"],
+  required: ["is_subscription", "is_cancellation", "vendor", "price", "billing_cycle", "renewal_date", "confidence"],
   properties: {
     is_subscription: { type: "boolean" },
+    is_cancellation: { type: "boolean" },
     vendor: { type: "string" },
     price: {
       type: "object",

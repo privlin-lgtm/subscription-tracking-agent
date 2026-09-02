@@ -35,6 +35,7 @@ export type ExtractionInput = {
 
 export type ExtractionResult = {
   isSubscription: boolean;
+  isCancellation: boolean;
   vendor: string;
   priceAmount: number;
   currency: string;

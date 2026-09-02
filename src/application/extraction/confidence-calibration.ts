@@ -22,21 +22,25 @@ export function calibrateConfidence(
     confidence = Math.min(1, confidence + 0.05);
   }
 
-  if (!isIso4217(extraction.currency)) {
-    confidence = Math.min(confidence, autoApplyThreshold - 0.01);
-    reasons.push("currency_not_iso_4217");
-  }
-  if (!(extraction.priceAmount > 0)) {
-    confidence = Math.min(confidence, autoApplyThreshold - 0.01);
-    reasons.push("missing_or_invalid_price");
-  }
-  if (!extraction.renewalDate) {
-    confidence = Math.min(confidence, autoApplyThreshold - 0.01);
-    reasons.push("missing_or_implausible_renewal_date");
-  }
-  if (extraction.billingCycle === "unknown") {
-    confidence = Math.min(confidence, autoApplyThreshold - 0.01);
-    reasons.push("unknown_billing_cycle");
+  // Cancellation confirmations legitimately omit price/date/billing-cycle detail, so those
+  // fields are not treated as quality signals when the email is flagged as a cancellation.
+  if (!extraction.isCancellation) {
+    if (!isIso4217(extraction.currency)) {
+      confidence = Math.min(confidence, autoApplyThreshold - 0.01);
+      reasons.push("currency_not_iso_4217");
+    }
+    if (!(extraction.priceAmount > 0)) {
+      confidence = Math.min(confidence, autoApplyThreshold - 0.01);
+      reasons.push("missing_or_invalid_price");
+    }
+    if (!extraction.renewalDate) {
+      confidence = Math.min(confidence, autoApplyThreshold - 0.01);
+      reasons.push("missing_or_implausible_renewal_date");
+    }
+    if (extraction.billingCycle === "unknown") {
+      confidence = Math.min(confidence, autoApplyThreshold - 0.01);
+      reasons.push("unknown_billing_cycle");
+    }
   }
 
   confidence = Math.min(1, Math.max(0, confidence));

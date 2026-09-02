@@ -4,6 +4,7 @@ import type { ExtractionResult } from "@/domain/ports";
 
 const base: ExtractionResult = {
   isSubscription: true,
+  isCancellation: false,
   vendor: "Netflix",
   priceAmount: 15.49,
   currency: "USD",
@@ -27,5 +28,22 @@ describe("confidence calibration", () => {
     );
     expect(result.confidence).toBeLessThan(0.85);
     expect(result.reviewReason).toContain("missing_or_invalid_price");
+  });
+
+  it("does not penalize a cancellation for missing price, date, or billing cycle", () => {
+    const result = calibrateConfidence(
+      {
+        ...base,
+        isCancellation: true,
+        priceAmount: 0,
+        renewalDate: null,
+        billingCycle: "unknown",
+        confidence: 0.9,
+      },
+      { sender: "info@netflix.com", knownVendorMatch: true },
+      0.85,
+    );
+    expect(result.reviewReason).toBeNull();
+    expect(result.confidence).toBeGreaterThanOrEqual(0.85);
   });
 });

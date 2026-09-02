@@ -17,7 +17,11 @@ import type {
 import { calibrateConfidence } from "@/application/extraction/confidence-calibration";
 import { passesSubscriptionPrefilter } from "@/application/gmail/gmail-prefilter";
 import { matchSubscription } from "@/application/subscriptions/matching.service";
-import { toBillingCycle, VendorNormalizationService } from "@/application/subscriptions/vendor-normalization.service";
+import {
+  toBillingCycle,
+  VendorNormalizationService,
+  type VendorNormalization,
+} from "@/application/subscriptions/vendor-normalization.service";
 
 type PipelineDeps = {
   users: UserRepository;
@@ -98,6 +102,11 @@ export class SubscriptionPipelineService {
       },
       this.deps.autoApplyThreshold,
     );
+
+    if (extraction.isCancellation) {
+      await this.handleCancellation(userId, message, historyId, vendor, extraction, calibrated);
+      return;
+    }
 
     const needsReview =
       !extraction.isSubscription ||
@@ -230,6 +239,85 @@ export class SubscriptionPipelineService {
       action: "subscription.pipeline.apply",
       actor: "system",
       details: { messageId: message.id, vendor: vendor.canonical, decision: decision.kind },
+    });
+  }
+
+  /**
+   * A cancellation confirmation matched against an existing ACTIVE subscription for this
+   * vendor is auto-applied only when confidence is high and the vendor match is exact — a
+   * wrongly-applied cancellation is worse than a missed one. Anything less certain flags the
+   * existing record for the user to confirm instead of creating a disconnected duplicate.
+   */
+  private async handleCancellation(
+    userId: string,
+    message: GmailMessage,
+    historyId: string,
+    vendor: VendorNormalization,
+    extraction: ExtractionResult,
+    calibrated: { confidence: number; reviewReason: string | null },
+  ): Promise<void> {
+    const candidates = await this.deps.subscriptions.findActiveByVendor(userId, vendor.canonical);
+    const active = candidates.find((item) => item.status === SubscriptionStatus.ACTIVE);
+
+    if (!active) {
+      await this.deps.processedEmails.record({
+        userId,
+        gmailMessageId: message.id,
+        gmailHistoryId: historyId,
+        classification: EmailClassification.SUBSCRIPTION,
+      });
+      return;
+    }
+
+    const confidentCancellation =
+      calibrated.confidence >= this.deps.autoApplyThreshold && vendor.kind !== "fuzzy";
+
+    if (confidentCancellation) {
+      await this.deps.subscriptions.update(active.id, { status: SubscriptionStatus.CANCELED });
+      await this.deps.subscriptions.appendEvent({
+        subscriptionId: active.id,
+        eventType: EventType.CANCELED,
+        sourceEmailId: message.id,
+        payload: extraction as unknown as object,
+      });
+      await this.deps.processedEmails.record({
+        userId,
+        gmailMessageId: message.id,
+        gmailHistoryId: historyId,
+        classification: EmailClassification.SUBSCRIPTION,
+      });
+      await this.deps.audit.record({
+        userId,
+        action: "subscription.pipeline.cancel",
+        actor: "system",
+        details: { messageId: message.id, subscriptionId: active.id, vendor: vendor.canonical },
+      });
+      return;
+    }
+
+    await this.deps.subscriptions.update(active.id, {
+      status: SubscriptionStatus.PENDING_REVIEW,
+      reviewReason: "possible_cancellation_low_confidence",
+    });
+    await this.deps.processedEmails.record({
+      userId,
+      gmailMessageId: message.id,
+      gmailHistoryId: historyId,
+      classification: EmailClassification.AMBIGUOUS,
+    });
+    await this.deps.audit.record({
+      userId,
+      action: "subscription.pipeline.flag_possible_cancellation",
+      actor: "system",
+      details: { messageId: message.id, subscriptionId: active.id, vendor: vendor.canonical },
+    });
+    await this.deps.notifications.createIfAbsent({
+      userId,
+      subscriptionId: active.id,
+      type: "PENDING_REVIEW",
+      title: `Possible cancellation: ${vendor.canonical}`,
+      body: `We think ${vendor.canonical} may have been canceled. Confirm to keep it active, or dismiss to stop tracking it.`,
+      idempotencyKey: `cancel-review:${active.id}:${message.id}`,
     });
   }
 

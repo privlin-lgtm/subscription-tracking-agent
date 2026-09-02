@@ -6,6 +6,7 @@ const billingCycleSchema = z.enum(["weekly", "monthly", "annual", "custom", "unk
 
 export const llmExtractionSchema = z.object({
   is_subscription: z.boolean(),
+  is_cancellation: z.boolean(),
   vendor: z.string().min(1).max(200),
   price: z.object({
     amount: z.number(),
@@ -32,6 +33,7 @@ export function parseLlmExtraction(raw: unknown, now = new Date()): ExtractionRe
 
   return {
     isSubscription: parsed.is_subscription,
+    isCancellation: parsed.is_cancellation,
     vendor: parsed.vendor.trim(),
     priceAmount: parsed.price.amount,
     currency,
