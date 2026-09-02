@@ -54,6 +54,7 @@ function createHarness(options?: {
     updateGmailConnection: vi.fn(async () => undefined),
     updateHistoryId: vi.fn(async () => undefined),
     listConnectedUserIds: vi.fn(async () => [USER_ID]),
+    deleteAccount: vi.fn(async () => undefined),
   };
   const processedEmails: ProcessedEmailRepository = {
     exists: vi.fn(async (_userId, id) => processed.has(id)),

@@ -161,6 +161,7 @@ export function createInboxHarness(fixtures: PipelineFixture[], options?: { hist
     updateGmailConnection: vi.fn(async () => undefined),
     updateHistoryId: vi.fn(async () => undefined),
     listConnectedUserIds: vi.fn(async () => (connected ? [TEST_USER_ID] : [])),
+    deleteAccount: vi.fn(async () => undefined),
   };
 
   const pipeline = new SubscriptionPipelineService({

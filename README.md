@@ -92,9 +92,14 @@ npm run worker
 
 ## Phase 10 decisions
 
-- **Scalability review (10,000-user assumption), two code-fixable blockers fixed** (see [docs/phase10-scalability-review.md](docs/phase10-scalability-review.md)): the Postgres advisory lock's acquire/release could run on different pooled connections, likely making the unlock a silent no-op and leaking the lock until that connection cycled — silently disabling Gmail sync for that user. Fixed by pinning both calls to one connection via `prisma.$transaction`. The Gmail-sync worker loop was fully serial across users (~2.8 hours for 10k users at 1s/user, far longer than its own 15-minute schedule) — now runs with configurable bounded concurrency (`GMAIL_SYNC_CONCURRENCY`, default 10) via a new `runWithConcurrency` helper. Scheduled jobs also gained an overlap guard (skip a tick if the previous run is still in progress).
+- **Scalability review (10,000-user assumption), two code-fixable blockers fixed** (see [docs/phase10-scalability-review.md](docs/phase10-scalability-review.md)): the Postgres advisory lock's acquire/release could run on different pooled connections, making the unlock a silent no-op and leaking the lock until that connection cycled — silently disabling Gmail sync for that user. Live-verified against a real Postgres instance under concurrent load: the old implementation failed to reacquire the lock 49/50 times; the fix (pinning both calls to one connection via `prisma.$transaction`) failed 0/50. The Gmail-sync worker loop was fully serial across users (~2.8 hours for 10k users at 1s/user, far longer than its own 15-minute schedule) — now runs with configurable bounded concurrency (`GMAIL_SYNC_CONCURRENCY`, default 10) via a new `runWithConcurrency` helper. Scheduled jobs also gained an overlap guard (skip a tick if the previous run is still in progress).
 - **Not code-fixable**: a single Google Cloud project's Gmail API quota is shared across every user — back-of-envelope, 10k users on a 15-minute poll is ~960k API calls/day minimum, plausibly enough to hit quota well before 10k users. Needs a quota increase, sharding across projects, or a move to Gmail push notifications (`users.watch`) — an infrastructure/ops decision, not a code change.
 - **Documented, not fixed**: the worker is a single process with no distributed-scheduling story if ever run as multiple replicas (the per-user Gmail sync lock already handles that case; the alert/purge jobs don't yet). Not needed at one replica, flagged as a known ceiling rather than a surprise.
+
+## Phase 11 decisions
+
+- **Pre-release audit: Conditional Go** (see [docs/phase11-pre-release-audit.md](docs/phase11-pre-release-audit.md)): synthesizes Phases 1–10 and adds independent coverage of monitoring, alerting, and disaster recovery — none of which exist yet in this repo (no APM/error tracking, no operational alerting, no documented backup/restore procedure) and all three are correctly infrastructure/vendor decisions this review can flag but not make. This phase also found and fixed its own High-severity gap: **no user-facing account deletion existed at all** — the database cascade was correct (verified in Phase 6) but nothing could trigger it, leaving GDPR Article 17 (right to erasure) with no working path. Added `UserRepository.deleteAccount`, a `DELETE /api/account` route, and a confirm-then-delete Settings UI that signs the user out on success — **live-verified**: registered a real account against an isolated Postgres instance, deleted it through the actual UI, and confirmed a subsequent login with the same credentials correctly fails.
+- **Remaining launch items are all decisions, not defects**: choose monitoring/alerting tooling, document and test a backup/restore procedure, decide the Gmail API quota strategy (Phase 10, L4), and get a legal review of privacy/terms language. Every code-fixable blocker found across all eleven phases has been fixed.
 
 ## Development Roadmap
 
@@ -105,7 +110,7 @@ npm run worker
 5. [x] Build and validate the subscription extraction pipeline.
 6. [x] Add persistence, history, renewals, and audit logging.
 7. [x] Create unit, integration, end-to-end, and adversarial tests.
-8. [ ] Complete security, engineering, scalability, and release reviews.
+8. [x] Complete security, engineering, scalability, and release reviews.
 
 ## Development Playbook
 
@@ -123,6 +128,7 @@ See [subscription-tracking-agent-prompts.md](subscription-tracking-agent-prompts
 - [docs/phase8-prompt-injection-testing.md](docs/phase8-prompt-injection-testing.md) — Phase 8 output: malicious-email examples (prompt injections, jailbreaks, hidden instructions, HTML-based and embedded-content attacks) and the defense each one exercises.
 - [docs/phase9-engineering-review.md](docs/phase9-engineering-review.md) — Phase 9 output: principal-engineer review (critical/major/minor issues, refactoring suggestions, test coverage, architecture alignment, release recommendation).
 - [docs/phase10-scalability-review.md](docs/phase10-scalability-review.md) — Phase 10 output: scalability review at a 10,000-user assumption, covering architecture, reliability, scaling strategy, database load, Gmail API quotas, cost model, and background processing, with launch blockers and fixes/recommendations.
+- [docs/phase11-pre-release-audit.md](docs/phase11-pre-release-audit.md) — Phase 11 output: CTO-level pre-release audit synthesizing all prior phases plus new coverage of monitoring, alerting, disaster recovery, and compliance, with a Go/No-Go recommendation and the full cross-phase launch-blocker list.
 
 ## Security and Privacy
 

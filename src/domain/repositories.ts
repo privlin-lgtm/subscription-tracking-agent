@@ -152,6 +152,8 @@ export interface UserRepository {
   ): Promise<void>;
   updateHistoryId(userId: string, historyId: string): Promise<void>;
   listConnectedUserIds(): Promise<string[]>;
+  /** Deletes the user row; every owned row (subscriptions, events, audit log, ...) cascades via the schema's onDelete: Cascade. */
+  deleteAccount(userId: string): Promise<void>;
 }
 
 export interface ProcessedEmailRepository {

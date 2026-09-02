@@ -240,6 +240,10 @@ export class PrismaUserRepository implements UserRepository {
     });
     return rows.map((row) => row.id);
   }
+
+  async deleteAccount(userId: string) {
+    await prisma.user.delete({ where: { id: userId } });
+  }
 }
 
 export class PrismaProcessedEmailRepository implements ProcessedEmailRepository {

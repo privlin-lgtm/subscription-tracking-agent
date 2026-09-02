@@ -12,6 +12,7 @@ function users(existing: { id: string; email: string; passwordHash: string | nul
     updateGmailConnection: vi.fn(),
     updateHistoryId: vi.fn(),
     listConnectedUserIds: vi.fn(async () => []),
+    deleteAccount: vi.fn(async () => undefined),
   };
 }
 

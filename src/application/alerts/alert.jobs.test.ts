@@ -17,6 +17,7 @@ function buildHarness(connectedUserIds: string[]) {
     updateGmailConnection: vi.fn(async () => undefined),
     updateHistoryId: vi.fn(async () => undefined),
     listConnectedUserIds: vi.fn(async () => connectedUserIds),
+    deleteAccount: vi.fn(async () => undefined),
   };
   const notifications: NotificationRepository = {
     createIfAbsent: vi.fn(async () => true),
