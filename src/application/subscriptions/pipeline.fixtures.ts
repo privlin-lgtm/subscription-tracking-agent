@@ -175,6 +175,32 @@ export const CANCELLATION_AMBIGUOUS: PipelineFixture = {
   }),
 };
 
+/**
+ * High-confidence, exact-vendor-match cancellation — but from a sender NOT on the
+ * known-billing-domain allowlist (e.g. spoofed, or a convincing-but-fake notice). Vendor name
+ * and self-reported confidence alone are not proof of who sent the email, so this must never
+ * auto-cancel a real, existing subscription — see docs/phase8-security-review.md, S1.
+ */
+export const CANCELLATION_SPOOFED_SENDER: PipelineFixture = {
+  name: "cancellation_spoofed_sender",
+  message: message({
+    id: "msg_cancellation_spoofed",
+    subject: "Your Netflix membership has been canceled",
+    sender: "no-reply@netfIix-billing.example",
+    snippet: "membership canceled, no further charges",
+    bodyText: "Your Netflix membership has been canceled. You will not be billed again.",
+  }),
+  extraction: extraction({
+    isCancellation: true,
+    vendor: "Netflix",
+    priceAmount: 0,
+    currency: "USD",
+    renewalDate: null,
+    billingCycle: "unknown",
+    confidence: 0.95,
+  }),
+};
+
 /** The LLM call itself fails (timeout, malformed JSON after repair retry): must fail safe into review, not drop the email. */
 export const EXTRACTION_FAILURE: PipelineFixture = {
   name: "extraction_failure",

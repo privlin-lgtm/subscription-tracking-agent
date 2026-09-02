@@ -2,6 +2,7 @@ import { EmailClassification, EventType, SubscriptionStatus } from "@prisma/clie
 import type { Clock, ExtractionAgent, ExtractionResult, GmailClient, GmailMessage, TokenEncryptor } from "@/domain/ports";
 import { Money } from "@/domain/value-objects/money";
 import { isIso4217 } from "@/shared/iso-4217";
+import { isKnownBillingSender } from "@/shared/constants";
 import { ConflictError } from "@/domain/errors";
 import type {
   CreateSubscriptionInput,
@@ -244,9 +245,11 @@ export class SubscriptionPipelineService {
 
   /**
    * A cancellation confirmation matched against an existing ACTIVE subscription for this
-   * vendor is auto-applied only when confidence is high and the vendor match is exact — a
-   * wrongly-applied cancellation is worse than a missed one. Anything less certain flags the
-   * existing record for the user to confirm instead of creating a disconnected duplicate.
+   * vendor is auto-applied only when confidence is high, the vendor match is exact, AND the
+   * sender is on the known-billing-domain allowlist — a wrongly-applied cancellation is worse
+   * than a missed one, and vendor name alone is not proof of who actually sent the email (see
+   * docs/phase8-security-review.md, S1). Anything less certain flags the existing record for
+   * the user to confirm instead of creating a disconnected duplicate.
    */
   private async handleCancellation(
     userId: string,
@@ -270,7 +273,9 @@ export class SubscriptionPipelineService {
     }
 
     const confidentCancellation =
-      calibrated.confidence >= this.deps.autoApplyThreshold && vendor.kind !== "fuzzy";
+      calibrated.confidence >= this.deps.autoApplyThreshold &&
+      vendor.kind !== "fuzzy" &&
+      isKnownBillingSender(message.sender);
 
     if (confidentCancellation) {
       await this.deps.subscriptions.applyWrite({

@@ -28,6 +28,12 @@ export const KNOWN_BILLING_DOMAINS = [
   "paypal.com",
 ];
 
+/** Whether a sender address's domain is on the known-billing-domain allowlist. */
+export function isKnownBillingSender(sender: string): boolean {
+  const lower = sender.toLowerCase();
+  return KNOWN_BILLING_DOMAINS.some((domain) => lower.includes(domain));
+}
+
 export const EXTRACTION_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,

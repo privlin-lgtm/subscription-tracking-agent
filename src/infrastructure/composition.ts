@@ -28,7 +28,12 @@ export function createApp() {
   const snapshots = new PrismaEmailSnapshotRepository();
   const vendorAliases = new PrismaVendorAliasRepository();
   const reviews = new PrismaReviewRepository();
-  const encryptor = new AesGcmTokenEncryptor(appConfig.tokenEncryptionKey || appConfig.authSecret);
+  // Deliberately no fallback to authSecret: reusing the session-signing secret to encrypt
+  // Gmail refresh tokens would mean a compromise of either one compromises both, and would
+  // silently invalidate stored tokens on an unrelated authSecret rotation. Misconfiguration
+  // fails clearly (AesGcmTokenEncryptor throws) the first time a token is actually encrypted
+  // or decrypted, rather than degrading security silently — see docs/phase8-security-review.md, S3.
+  const encryptor = new AesGcmTokenEncryptor(appConfig.tokenEncryptionKey);
   const gmail = new GoogleGmailClient();
   const extractor = new OpenAiCompatibleExtractor();
   const locks = new PostgresAdvisoryLock();

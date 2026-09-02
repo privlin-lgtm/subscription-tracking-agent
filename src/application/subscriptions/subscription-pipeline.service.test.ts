@@ -14,6 +14,7 @@ import { SubscriptionPipelineService } from "@/application/subscriptions/subscri
 import {
   CANCELLATION_AMBIGUOUS,
   CANCELLATION_CONFIRMED,
+  CANCELLATION_SPOOFED_SENDER,
   CURRENCY_SWITCH,
   DUPLICATE_RECEIPT,
   EXTRACTION_FAILURE,
@@ -242,6 +243,21 @@ describe("subscription pipeline (fixture-driven)", () => {
       "subscription.pipeline.apply",
       "subscription.pipeline.cancel",
     ]);
+  });
+
+  it("never auto-cancels on vendor name and confidence alone — an untrusted sender is held for review even at high confidence with an exact vendor match", async () => {
+    const { pipeline, subscriptions, notifications } = buildHarness([NEW_SUBSCRIPTION, CANCELLATION_SPOOFED_SENDER]);
+
+    await pipeline.processMessage(USER_ID, NEW_SUBSCRIPTION.message, "10");
+    await pipeline.processMessage(USER_ID, CANCELLATION_SPOOFED_SENDER.message, "11");
+
+    expect(subscriptions.records.size).toBe(1);
+    const record = [...subscriptions.records.values()][0];
+    expect(record.status).toBe(SubscriptionStatus.PENDING_REVIEW);
+    expect(record.reviewReason).toBe("possible_cancellation_low_confidence");
+    expect(notifications.createIfAbsent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "PENDING_REVIEW" }),
+    );
   });
 
   it("flags an existing subscription for review on a low-confidence cancellation signal, instead of auto-canceling", async () => {

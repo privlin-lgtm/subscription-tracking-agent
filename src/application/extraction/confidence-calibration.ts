@@ -1,4 +1,4 @@
-import { KNOWN_BILLING_DOMAINS } from "@/shared/constants";
+import { isKnownBillingSender } from "@/shared/constants";
 import { isIso4217 } from "@/shared/iso-4217";
 import type { ExtractionResult } from "@/domain/ports";
 
@@ -15,7 +15,7 @@ export function calibrateConfidence(
   let confidence = extraction.confidence;
   const reasons: string[] = [];
 
-  if (KNOWN_BILLING_DOMAINS.some((domain) => signals.sender.toLowerCase().includes(domain))) {
+  if (isKnownBillingSender(signals.sender)) {
     confidence = Math.min(1, confidence + 0.08);
   }
   if (signals.knownVendorMatch) {
