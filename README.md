@@ -71,6 +71,7 @@ npm run worker
 - **Writes are transactional**: create, update, and cancel persist the subscription row, append-only events, optional price-change row, and audit log in one `prisma.$transaction`.
 - **History is queryable**: each subscription exposes event history and price-change history; users can add and edit subscriptions manually, and those edits emit `CREATED`, `UPDATED`, `RENEWED`, `PRICE_CHANGED`, or `CANCELED`.
 - **Renewals and audit have first-class reads**: upcoming renewals are queried by `nextRenewalDate` window, and the audit log is listed per user.
+- **Database review** (see [docs/phase6-database-review.md](docs/phase6-database-review.md)): the highest-severity finding is that the Gmail-driven pipeline's writes don't go through the transactional `applyWrite` helper the manual CRUD path uses, so a mid-sequence crash there can silently lose event/price-change history — not yet fixed. Also flagged: the per-connected-user serial loop in `AlertJobs` won't scale to 10k users, and `NotificationRepository.createIfAbsent` swallows real errors as harmless duplicates.
 
 ## Development Roadmap
 
@@ -93,6 +94,7 @@ See [subscription-tracking-agent-prompts.md](subscription-tracking-agent-prompts
 - [docs/technical-design.md](docs/technical-design.md) — Phase 2 output: database schema, Gmail workflow, extraction pipeline, lifecycle state machine, and alert scheduling.
 - [docs/phase5-extraction-design.md](docs/phase5-extraction-design.md) — Phase 5 output: extraction prompt/schema, validation rules, vendor/matching strategy, cancellation handling.
 - [docs/phase5-extraction-validation.md](docs/phase5-extraction-validation.md) — Phase 5 output: QA review of vendor accuracy, false positive/negative risk, international billing, currency conversion, and lifecycle edge cases, with severity/confidence ratings.
+- [docs/phase6-database-review.md](docs/phase6-database-review.md) — Phase 6 output: database review covering normalization, scalability, query performance, historical tracking, data retention, and auditing, with severity/confidence ratings and recommended schema improvements.
 
 ## Security and Privacy
 
