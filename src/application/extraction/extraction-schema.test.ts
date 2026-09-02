@@ -52,6 +52,36 @@ describe("extraction schema", () => {
     expect(result.renewalDate).toBeNull();
   });
 
+  it("normalizes extracted currencies and leaves unknown codes uppercase for later review", () => {
+    const usd = parseLlmExtraction(
+      {
+        is_subscription: true,
+        is_cancellation: false,
+        vendor: "Netflix",
+        price: { amount: 15.49, currency: "usd" },
+        billing_cycle: "monthly",
+        renewal_date: null,
+        confidence: 0.9,
+      },
+      new Date("2026-09-02"),
+    );
+    expect(usd.currency).toBe("USD");
+
+    const unknown = parseLlmExtraction(
+      {
+        is_subscription: true,
+        is_cancellation: false,
+        vendor: "Netflix",
+        price: { amount: 15.49, currency: "xyz" },
+        billing_cycle: "monthly",
+        renewal_date: null,
+        confidence: 0.9,
+      },
+      new Date("2026-09-02"),
+    );
+    expect(unknown.currency).toBe("XYZ");
+  });
+
   it("parses a cancellation payload that omits price and date detail", () => {
     const result = parseLlmExtraction(
       {

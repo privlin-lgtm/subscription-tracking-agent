@@ -193,6 +193,47 @@ export const EXTRACTION_FAILURE: PipelineFixture = {
  * the canonical "Amazon Prime Video" above the match threshold but isn't exact:
  * must be routed to review rather than silently auto-merged.
  */
+/**
+ * Trial converted to paid: same vendor, promotional price replaced by the regular plan.
+ * Should be treated as a price change on the existing subscription, not a second one.
+ */
+export const TRIAL_UPGRADE: PipelineFixture = {
+  name: "trial_upgrade",
+  message: message({
+    id: "msg_trial_upgrade",
+    subject: "Your Netflix trial has ended",
+    sender: "info@netflix.com",
+    snippet: "trial ends, your plan is now billed monthly",
+    bodyText: "Your free trial has ended. You were billed $15.49 today, renews 2026-11-01.",
+  }),
+  extraction: extraction({ priceAmount: 15.49, renewalDate: new Date("2026-11-01") }),
+};
+
+export const TRIAL_START: PipelineFixture = {
+  name: "trial_start",
+  message: message({
+    id: "msg_trial_start",
+    subject: "Welcome to your Netflix trial",
+    sender: "info@netflix.com",
+    snippet: "trial started, billed monthly after trial ends",
+    bodyText: "Your trial is active. Introductory price $7.99, renews 2026-10-01.",
+  }),
+  extraction: extraction({ priceAmount: 7.99, renewalDate: new Date("2026-10-01") }),
+};
+
+/** Looks like a receipt to the prefilter, but the model is sure it is not a subscription. */
+export const RECEIPT_LOOKALIKE: PipelineFixture = {
+  name: "receipt_lookalike",
+  message: message({
+    id: "msg_one_off",
+    subject: "Your receipt for a one-time purchase",
+    sender: "store@retailer.example",
+    snippet: "receipt, payment confirmation",
+    bodyText: "Thanks for buying a gift card. This is not a recurring charge.",
+  }),
+  extraction: extraction({ isSubscription: false, vendor: "Retailer", confidence: 0.96 }),
+};
+
 export const FUZZY_VENDOR_MATCH: PipelineFixture = {
   name: "fuzzy_vendor_match",
   message: message({

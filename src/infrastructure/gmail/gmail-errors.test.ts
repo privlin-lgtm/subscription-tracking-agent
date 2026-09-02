@@ -20,4 +20,12 @@ describe("gmail error classification", () => {
   it("reads Retry-After in seconds", () => {
     expect(retryAfterMs({ response: { headers: { "retry-after": "8" } } })).toBe(8000);
   });
+
+  it("classifies remaining auth and unknown errors", () => {
+    expect(classifyGmailError({ status: 403, errors: [{ reason: "insufficientPermissions" }] })).toBe("auth");
+    expect(classifyGmailError({ code: "429" })).toBe("rate_limit");
+    expect(classifyGmailError("nope")).toBe("other");
+    expect(retryAfterMs("nope", 250)).toBe(250);
+    expect(retryAfterMs({ response: { headers: { "Retry-After": ["2"] } } })).toBe(2000);
+  });
 });

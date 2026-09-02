@@ -73,6 +73,12 @@ npm run worker
 - **Renewals and audit have first-class reads**: upcoming renewals are queried by `nextRenewalDate` window, and the audit log is listed per user.
 - **Database review, all findings fixed** (see [docs/phase6-database-review.md](docs/phase6-database-review.md)): the Gmail-driven pipeline's writes (and `ReviewService.confirm`/`dismiss`, found while fixing this) now go through the same transactional `applyWrite` helper as the manual CRUD path, so a mid-sequence crash can no longer silently lose event/price-change history. `AlertJobs` issues one batched query across all connected users instead of one per user. `NotificationRepository.createIfAbsent` now rethrows anything that isn't a genuine duplicate. `AuditLog` gets a configurable retention purge (`AUDIT_LOG_RETENTION_DAYS`, default 180) — `SubscriptionEvent`/`PriceChange` are kept forever by design. `listByUser` accepts a status set so spend reporting queries only what it needs. History reads (`listEvents`/`listPriceChanges`) are `userId`-scoped at the query level, not just by caller convention.
 
+## Phase 7 decisions
+
+- **Unit coverage target is scoped**: `npm run test:coverage` measures application, domain, shared, and Gmail parse/retry helpers (not Next.js routes, Prisma, or the Google SDK client) and currently reports 96% lines / 93% functions, failing the build under 90%.
+- **Integration tests drive the real sync → pipeline → alert path** against in-memory repositories and a fake inbox, using the same fixtures as extraction.
+- **End-to-end scenarios** cover new subscription, renewal, cancellation, trial upgrade, price increase, duplicate receipt, a receipt lookalike, and Gmail auth failure. Adversarial email generation and data-quality review remain the Claude prompts in this phase.
+
 ## Development Roadmap
 
 1. [x] Define requirements and system architecture.
@@ -81,7 +87,7 @@ npm run worker
 4. [x] Implement secure Gmail synchronization.
 5. [x] Build and validate the subscription extraction pipeline.
 6. [x] Add persistence, history, renewals, and audit logging.
-7. [ ] Create unit, integration, end-to-end, and adversarial tests.
+7. [x] Create unit, integration, end-to-end, and adversarial tests.
 8. [ ] Complete security, engineering, scalability, and release reviews.
 
 ## Development Playbook

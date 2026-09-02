@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VendorNormalizationService } from "@/application/subscriptions/vendor-normalization.service";
+import { toBillingCycle, VendorNormalizationService } from "@/application/subscriptions/vendor-normalization.service";
 import type { VendorAliasRepository } from "@/domain/repositories";
 
 class InMemoryAliases implements VendorAliasRepository {
@@ -34,5 +34,22 @@ describe("vendor normalization", () => {
     if (result.kind === "fuzzy") {
       expect(result.score).toBeGreaterThanOrEqual(0.88);
     }
+  });
+
+  it("title-cases an unknown vendor instead of inventing an alias", async () => {
+    await expect(service.normalize("Zebra Fitness Club")).resolves.toEqual({
+      kind: "unmatched",
+      canonical: "Zebra Fitness Club",
+    });
+  });
+});
+
+describe("toBillingCycle", () => {
+  it("maps extraction cycles onto the Prisma enum", () => {
+    expect(toBillingCycle("weekly")).toBe("WEEKLY");
+    expect(toBillingCycle("monthly")).toBe("MONTHLY");
+    expect(toBillingCycle("annual")).toBe("ANNUAL");
+    expect(toBillingCycle("custom")).toBe("CUSTOM");
+    expect(toBillingCycle("unknown")).toBe("CUSTOM");
   });
 });

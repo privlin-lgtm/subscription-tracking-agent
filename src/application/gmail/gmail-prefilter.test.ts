@@ -31,4 +31,28 @@ describe("gmail prefilter", () => {
       }),
     ).toBe(false);
   });
+
+  it("keeps invoices, memberships, and trial-end notices", () => {
+    expect(
+      passesSubscriptionPrefilter({
+        subject: "Invoice #4421",
+        sender: "billing@vendor.dev",
+        snippet: "amount due",
+      }),
+    ).toBe(true);
+    expect(
+      passesSubscriptionPrefilter({
+        subject: "Membership canceled",
+        sender: "hello@club.dev",
+        snippet: "your membership",
+      }),
+    ).toBe(true);
+    expect(
+      passesSubscriptionPrefilter({
+        subject: "Your trial ends tomorrow",
+        sender: "no-reply@app.dev",
+        snippet: "trial ends",
+      }),
+    ).toBe(true);
+  });
 });

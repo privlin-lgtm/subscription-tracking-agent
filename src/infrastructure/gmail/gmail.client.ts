@@ -5,6 +5,7 @@ import { GmailAuthError } from "@/domain/errors";
 import { classifyGmailError } from "@/infrastructure/gmail/gmail-errors";
 import { withGmailRetries } from "@/infrastructure/gmail/rate-limit";
 import { buildRelevantGmailQuery } from "@/application/gmail/relevant-query";
+import { parseGmailFullMessage, parseGmailMetadata } from "@/infrastructure/gmail/gmail-message-parse";
 import type { GmailClient, GmailMessage, GmailMessageMeta, HistorySyncResult } from "@/domain/ports";
 
 export const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
@@ -47,32 +48,6 @@ function gmailApi(refreshToken: string) {
   const auth = createGoogleOAuthClient();
   auth.setCredentials({ refresh_token: refreshToken });
   return google.gmail({ version: "v1", auth });
-}
-
-function decodeBody(payload: { body?: { data?: string | null }; parts?: unknown[] } | undefined): string {
-  if (!payload) {
-    return "";
-  }
-  if (payload.body?.data) {
-    return Buffer.from(payload.body.data, "base64url").toString("utf8");
-  }
-  const parts = (payload.parts ?? []) as Array<{ mimeType?: string; body?: { data?: string }; parts?: unknown[] }>;
-  const textPart = parts.find((part) => part.mimeType === "text/plain") ?? parts[0];
-  if (textPart?.body?.data) {
-    return Buffer.from(textPart.body.data, "base64url").toString("utf8");
-  }
-  return parts.map((part) => decodeBody(part)).join("\n");
-}
-
-function stripHtml(value: string): string {
-  return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function headerValue(
-  headers: Array<{ name?: string | null; value?: string | null }> | undefined,
-  name: string,
-): string {
-  return headers?.find((item) => item.name?.toLowerCase() === name.toLowerCase())?.value ?? "";
 }
 
 async function gmailCall<T>(fn: () => Promise<T>): Promise<T> {
@@ -162,14 +137,7 @@ export class GoogleGmailClient implements GmailClient {
         metadataHeaders: ["Subject", "From"],
       }),
     );
-    return {
-      id: response.data.id ?? messageId,
-      historyId: response.data.historyId ?? "",
-      threadId: response.data.threadId ?? "",
-      subject: headerValue(response.data.payload?.headers, "subject"),
-      sender: headerValue(response.data.payload?.headers, "from"),
-      snippet: response.data.snippet ?? "",
-    };
+    return parseGmailMetadata(response.data, messageId);
   }
 
   async getMessage(refreshToken: string, messageId: string): Promise<GmailMessage> {
@@ -181,17 +149,7 @@ export class GoogleGmailClient implements GmailClient {
         format: "full",
       }),
     );
-    const rawBody = decodeBody(response.data.payload);
-    return {
-      id: response.data.id ?? messageId,
-      historyId: response.data.historyId ?? "",
-      threadId: response.data.threadId ?? "",
-      subject: headerValue(response.data.payload?.headers, "subject"),
-      sender: headerValue(response.data.payload?.headers, "from"),
-      snippet: response.data.snippet ?? "",
-      bodyText: stripHtml(rawBody).slice(0, 12_000),
-      internalDate: new Date(Number(response.data.internalDate ?? Date.now())),
-    };
+    return parseGmailFullMessage(response.data, messageId);
   }
 
   async getProfileHistoryId(refreshToken: string): Promise<string> {

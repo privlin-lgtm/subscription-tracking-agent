@@ -32,7 +32,7 @@ function buildHarness(connectedUserIds: string[]) {
 
   const alertJobs = new AlertJobs(users, subscriptions, notifications, snapshots, audit, clock, 7, 2, 180);
 
-  return { alertJobs, subscriptions, audit, notifications, users };
+  return { alertJobs, subscriptions, audit, notifications, users, snapshots };
 }
 
 describe("AlertJobs.runRenewalReminders", () => {
@@ -83,6 +83,15 @@ describe("AlertJobs.runRenewalReminders", () => {
     const batchSpy = vi.spyOn(subscriptions, "listDueRenewalsForUsers");
 
     expect(await alertJobs.runRenewalReminders()).toBe(0);
+    expect(batchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("AlertJobs.runInactivityScan empty inbox", () => {
+  it("does not query when no users are connected", async () => {
+    const { alertJobs, subscriptions } = buildHarness([]);
+    const batchSpy = vi.spyOn(subscriptions, "listStaleActiveForUsers");
+    expect(await alertJobs.runInactivityScan()).toBe(0);
     expect(batchSpy).not.toHaveBeenCalled();
   });
 });
@@ -141,6 +150,59 @@ describe("AlertJobs.runInactivityScan", () => {
     expect(await audit.listByUser("user_a")).toEqual([
       expect.objectContaining({ action: "subscription.flag_inactive" }),
     ]);
+  });
+});
+
+describe("AlertJobs.runRenewalReminders idempotency", () => {
+  it("does not count a reminder that was already sent", async () => {
+    const { alertJobs, subscriptions, notifications } = buildHarness(["user_a"]);
+    const dueSoon = new Date(NOW);
+    dueSoon.setDate(dueSoon.getDate() + 2);
+    await subscriptions.create({
+      userId: "user_a",
+      vendorNormalized: "Netflix",
+      vendorRaw: "Netflix",
+      status: SubscriptionStatus.ACTIVE,
+      priceAmountCents: 1549,
+      priceCurrency: "USD",
+      billingCycle: "MONTHLY",
+      nextRenewalDate: dueSoon,
+      lastSeenEmailId: null,
+      confidenceScore: 1,
+    });
+    notifications.createIfAbsent = vi.fn(async () => false);
+
+    expect(await alertJobs.runRenewalReminders()).toBe(0);
+  });
+
+  it("ignores canceled subscriptions even if a renewal date is near", async () => {
+    const { alertJobs, subscriptions, notifications } = buildHarness(["user_a"]);
+    const dueSoon = new Date(NOW);
+    dueSoon.setDate(dueSoon.getDate() + 2);
+    await subscriptions.create({
+      userId: "user_a",
+      vendorNormalized: "Netflix",
+      vendorRaw: "Netflix",
+      status: SubscriptionStatus.CANCELED,
+      priceAmountCents: 1549,
+      priceCurrency: "USD",
+      billingCycle: "MONTHLY",
+      nextRenewalDate: dueSoon,
+      lastSeenEmailId: null,
+      confidenceScore: 1,
+    });
+
+    expect(await alertJobs.runRenewalReminders()).toBe(0);
+    expect(notifications.createIfAbsent).not.toHaveBeenCalled();
+  });
+});
+
+describe("AlertJobs.purgeExpiredSnapshots", () => {
+  it("delegates snapshot TTL cleanup to the snapshot store", async () => {
+    const { alertJobs, snapshots } = buildHarness([]);
+    snapshots.purgeExpired = vi.fn(async () => 3);
+    expect(await alertJobs.purgeExpiredSnapshots()).toBe(3);
+    expect(snapshots.purgeExpired).toHaveBeenCalledWith(NOW);
   });
 });
 

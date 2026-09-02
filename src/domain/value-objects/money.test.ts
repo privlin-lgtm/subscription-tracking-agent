@@ -14,6 +14,13 @@ describe("Money", () => {
 
   it("does not treat different currencies as equal", () => {
     expect(new Money(1000, "USD").approximatelyEquals(new Money(1000, "EUR"))).toBe(false);
+    expect(new Money(1000, "USD").equals(new Money(1000, "USD"))).toBe(true);
+    expect(new Money(1000, "USD").equals(new Money(1000, "EUR"))).toBe(false);
+  });
+
+  it("rejects a non-positive major amount", () => {
+    expect(() => Money.fromMajor(0, "USD")).toThrow(/positive/);
+    expect(() => Money.fromMajor(-1, "USD")).toThrow(/positive/);
   });
 
   it("allows a small price tolerance in the same currency", () => {

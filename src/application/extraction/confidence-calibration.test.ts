@@ -30,6 +30,16 @@ describe("confidence calibration", () => {
     expect(result.reviewReason).toContain("missing_or_invalid_price");
   });
 
+  it("caps confidence when the currency is not ISO 4217", () => {
+    const result = calibrateConfidence(
+      { ...base, currency: "XYZ" },
+      { sender: "unknown@example.com", knownVendorMatch: false },
+      0.85,
+    );
+    expect(result.confidence).toBeLessThan(0.85);
+    expect(result.reviewReason).toContain("currency_not_iso_4217");
+  });
+
   it("does not penalize a cancellation for missing price, date, or billing cycle", () => {
     const result = calibrateConfidence(
       {

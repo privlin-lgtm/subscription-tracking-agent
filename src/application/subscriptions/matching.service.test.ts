@@ -63,4 +63,24 @@ describe("subscription matching", () => {
     });
     expect(decision.kind).toBe("currency_mismatch");
   });
+
+  it("ignores canceled candidates so a returning vendor can be created again", () => {
+    const decision = matchSubscription({
+      candidates: [record({ status: "CANCELED" })],
+      vendorNormalized: "Netflix",
+      money: new Money(1549, "USD"),
+      renewalDate: new Date("2026-11-02"),
+    });
+    expect(decision.kind).toBe("no_match");
+  });
+
+  it("returns no_match when the vendor is unknown", () => {
+    const decision = matchSubscription({
+      candidates: [record()],
+      vendorNormalized: "Spotify",
+      money: new Money(999, "USD"),
+      renewalDate: new Date("2026-11-02"),
+    });
+    expect(decision.kind).toBe("no_match");
+  });
 });

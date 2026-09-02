@@ -170,4 +170,53 @@ describe("gmail sync service", () => {
     );
     expect(harness.notifications.createIfAbsent).toHaveBeenCalled();
   });
+
+  it("stores an encrypted refresh token on connect", async () => {
+    const harness = createHarness();
+    await harness.service.connect(USER_ID, "plain-refresh");
+    expect(harness.users.updateGmailConnection).toHaveBeenCalledWith(
+      USER_ID,
+      expect.objectContaining({ gmailConnected: true, gmailRefreshToken: "enc:plain-refresh" }),
+    );
+  });
+
+  it("revokes and clears credentials on disconnect", async () => {
+    const harness = createHarness();
+    await harness.service.disconnect(USER_ID);
+    expect(harness.gmail.revokeRefreshToken).toHaveBeenCalledWith("token");
+    expect(harness.users.updateGmailConnection).toHaveBeenCalledWith(
+      USER_ID,
+      expect.objectContaining({ gmailConnected: false, gmailRefreshToken: null }),
+    );
+  });
+
+  it("rejects sync for an unknown user", async () => {
+    const harness = createHarness();
+    harness.users.findById = vi.fn(async () => null);
+    await expect(harness.service.syncUser(USER_ID)).rejects.toThrow(/was not found/);
+  });
+
+  it("still disconnects when token revoke fails", async () => {
+    const harness = createHarness();
+    harness.gmail.revokeRefreshToken = vi.fn(async () => {
+      throw new Error("already revoked");
+    });
+    await harness.service.disconnect(USER_ID);
+    expect(harness.users.updateGmailConnection).toHaveBeenCalledWith(
+      USER_ID,
+      expect.objectContaining({ gmailConnected: false }),
+    );
+  });
+
+  it("rejects sync when Gmail is not connected", async () => {
+    const harness = createHarness();
+    harness.users.findById = vi.fn(async () => ({
+      id: USER_ID,
+      email: "paul@example.com",
+      gmailConnected: false,
+      gmailRefreshToken: null,
+      gmailHistoryId: null,
+    }));
+    await expect(harness.service.syncUser(USER_ID)).rejects.toThrow(/not connected/);
+  });
 });
