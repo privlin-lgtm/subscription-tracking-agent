@@ -66,6 +66,12 @@ npm run worker
 - **Cancellation handling**: a detected cancellation auto-cancels the matching `ACTIVE` subscription only when confidence clears the auto-apply threshold and the vendor match is exact; otherwise the existing subscription is flagged `PENDING_REVIEW` (`possible_cancellation_low_confidence`) rather than silently left `ACTIVE` or duplicated.
 - **Known gaps** (see [docs/phase5-extraction-validation.md](docs/phase5-extraction-validation.md)): confirmed vendor reviews don't yet feed back into the alias table, and the prefilter keyword list needs widening once Phase 7 adversarial testing surfaces real gaps.
 
+## Phase 6 decisions
+
+- **Writes are transactional**: create, update, and cancel persist the subscription row, append-only events, optional price-change row, and audit log in one `prisma.$transaction`.
+- **History is queryable**: each subscription exposes event history and price-change history; users can add and edit subscriptions manually, and those edits emit `CREATED`, `UPDATED`, `RENEWED`, `PRICE_CHANGED`, or `CANCELED`.
+- **Renewals and audit have first-class reads**: upcoming renewals are queried by `nextRenewalDate` window, and the audit log is listed per user.
+
 ## Development Roadmap
 
 1. [x] Define requirements and system architecture.
@@ -73,7 +79,7 @@ npm run worker
 3. [x] Scaffold the application and infrastructure.
 4. [x] Implement secure Gmail synchronization.
 5. [x] Build and validate the subscription extraction pipeline.
-6. [ ] Add persistence, history, renewals, and audit logging.
+6. [x] Add persistence, history, renewals, and audit logging.
 7. [ ] Create unit, integration, end-to-end, and adversarial tests.
 8. [ ] Complete security, engineering, scalability, and release reviews.
 

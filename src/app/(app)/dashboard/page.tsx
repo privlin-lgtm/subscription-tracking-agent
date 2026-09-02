@@ -12,17 +12,13 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  const [subscriptions, summary, pending, notifications] = await Promise.all([
+  const [subscriptions, summary, pending, notifications, upcoming] = await Promise.all([
     app.subscriptionService.list(session.user.id),
     app.subscriptionService.spendSummary(session.user.id),
     app.reviewService.listPending(session.user.id),
     app.notifications.listByUser(session.user.id),
+    app.subscriptionService.listUpcomingRenewals(session.user.id, 30),
   ]);
-
-  const upcoming = subscriptions
-    .filter((item) => item.status === "ACTIVE" && item.nextRenewalDate)
-    .sort((a, b) => (a.nextRenewalDate?.getTime() ?? 0) - (b.nextRenewalDate?.getTime() ?? 0))
-    .slice(0, 5);
 
   return (
     <main className="space-y-6">
@@ -67,7 +63,7 @@ export default async function DashboardPage() {
           <p className="mt-2 text-sm text-slate-500">No upcoming renewals yet.</p>
         ) : (
           <ul className="mt-3 divide-y">
-            {upcoming.map((item) => (
+            {upcoming.slice(0, 5).map((item) => (
               <li className="flex items-center justify-between py-2 text-sm" key={item.id}>
                 <Link className="font-medium" href={`/subscriptions/${item.id}`}>
                   {item.vendorNormalized}

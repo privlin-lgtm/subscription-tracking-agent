@@ -1,20 +1,15 @@
-import { randomUUID } from "node:crypto";
 import { EventType, SubscriptionStatus } from "@prisma/client";
-import type { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { Clock, ExtractionAgent, ExtractionInput, ExtractionResult, GmailClient, TokenEncryptor } from "@/domain/ports";
 import type {
   AuditRepository,
-  CreateSubscriptionInput,
   EmailSnapshotRepository,
   NotificationRepository,
   ProcessedEmailRepository,
-  SubscriptionRecord,
-  SubscriptionRepository,
-  SubscriptionUpdate,
   UserRepository,
   VendorAliasRepository,
 } from "@/domain/repositories";
+import { InMemorySubscriptions } from "@/application/subscriptions/in-memory-subscriptions";
 import { SubscriptionPipelineService } from "@/application/subscriptions/subscription-pipeline.service";
 import {
   CANCELLATION_AMBIGUOUS,
@@ -34,76 +29,6 @@ import {
 const USER_ID = "user_1";
 const AUTO_APPLY_THRESHOLD = 0.85;
 const FUZZY_THRESHOLD = 0.88;
-
-class InMemorySubscriptions implements SubscriptionRepository {
-  records = new Map<string, SubscriptionRecord>();
-  events: Array<{ subscriptionId: string; eventType: EventType; sourceEmailId?: string | null }> = [];
-  priceChanges: Array<{ subscriptionId: string; oldAmountCents: number; newAmountCents: number; currency: string }> = [];
-
-  async listByUser(userId: string): Promise<SubscriptionRecord[]> {
-    return [...this.records.values()].filter((r) => r.userId === userId);
-  }
-
-  async getByIdForUser(userId: string, id: string): Promise<SubscriptionRecord | null> {
-    const record = this.records.get(id);
-    return record && record.userId === userId ? record : null;
-  }
-
-  async findActiveByVendor(userId: string, vendorNormalized: string): Promise<SubscriptionRecord[]> {
-    return [...this.records.values()].filter(
-      (r) => r.userId === userId && r.vendorNormalized.toLowerCase() === vendorNormalized.toLowerCase(),
-    );
-  }
-
-  async create(input: CreateSubscriptionInput): Promise<SubscriptionRecord> {
-    const record: SubscriptionRecord = {
-      id: randomUUID(),
-      reviewReason: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      ...input,
-    };
-    this.records.set(record.id, record);
-    return record;
-  }
-
-  async update(id: string, data: SubscriptionUpdate): Promise<SubscriptionRecord> {
-    const existing = this.records.get(id);
-    if (!existing) {
-      throw new Error(`unknown subscription ${id}`);
-    }
-    const updated = { ...existing, ...data, updatedAt: new Date() };
-    this.records.set(id, updated);
-    return updated;
-  }
-
-  async appendEvent(input: {
-    subscriptionId: string;
-    eventType: EventType;
-    sourceEmailId?: string | null;
-    payload: Prisma.InputJsonValue;
-  }): Promise<void> {
-    this.events.push(input);
-  }
-
-  async recordPriceChange(input: {
-    subscriptionId: string;
-    oldAmountCents: number;
-    newAmountCents: number;
-    currency: string;
-    sourceEmailId?: string | null;
-  }): Promise<void> {
-    this.priceChanges.push(input);
-  }
-
-  async listDueRenewals(): Promise<SubscriptionRecord[]> {
-    return [];
-  }
-
-  async listStaleActive(): Promise<SubscriptionRecord[]> {
-    return [];
-  }
-}
 
 class InMemoryProcessedEmails implements ProcessedEmailRepository {
   seen = new Map<string, string>();
@@ -157,7 +82,7 @@ function buildHarness(fixtures: PipelineFixture[]) {
     listByUser: vi.fn(async () => []),
     markRead: vi.fn(async () => undefined),
   };
-  const audit: AuditRepository = { record: vi.fn(async () => undefined) };
+  const audit: AuditRepository = { record: vi.fn(async () => undefined), listByUser: vi.fn(async () => []) };
   const snapshots: EmailSnapshotRepository = {
     save: vi.fn(async () => undefined),
     get: vi.fn(async () => null),

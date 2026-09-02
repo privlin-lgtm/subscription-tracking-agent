@@ -31,6 +31,7 @@ enum EventType {
   REACTIVATED
   REVIEW_CONFIRMED
   REVIEW_DISMISSED
+  UPDATED
 }
 
 enum EmailClassification {

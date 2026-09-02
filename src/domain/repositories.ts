@@ -56,27 +56,75 @@ export type SubscriptionUpdate = Partial<
   >
 >;
 
+export type SubscriptionEventRecord = {
+  id: string;
+  subscriptionId: string;
+  eventType: EventType;
+  sourceEmailId: string | null;
+  payload: unknown;
+  createdAt: Date;
+};
+
+export type PriceChangeRecord = {
+  id: string;
+  subscriptionId: string;
+  oldAmountCents: number;
+  newAmountCents: number;
+  currency: string;
+  detectedAt: Date;
+  sourceEmailId: string | null;
+};
+
+export type AuditRecord = {
+  id: string;
+  userId: string;
+  action: string;
+  actor: string;
+  details: unknown;
+  createdAt: Date;
+};
+
+export type SubscriptionEventInput = {
+  eventType: EventType;
+  sourceEmailId?: string | null;
+  payload: Prisma.InputJsonValue;
+};
+
+export type PriceChangeInput = {
+  oldAmountCents: number;
+  newAmountCents: number;
+  currency: string;
+  sourceEmailId?: string | null;
+};
+
+export type AuditInput = {
+  userId: string;
+  action: string;
+  actor: "system" | "user";
+  details: Prisma.InputJsonValue;
+};
+
+export type SubscriptionWrite = {
+  create?: CreateSubscriptionInput;
+  update?: { id: string; data: SubscriptionUpdate };
+  events?: SubscriptionEventInput[];
+  priceChange?: PriceChangeInput;
+  audit?: AuditInput;
+};
+
 export interface SubscriptionRepository {
   listByUser(userId: string, status?: SubscriptionStatus): Promise<SubscriptionRecord[]>;
   getByIdForUser(userId: string, id: string): Promise<SubscriptionRecord | null>;
   findActiveByVendor(userId: string, vendorNormalized: string): Promise<SubscriptionRecord[]>;
   create(input: CreateSubscriptionInput): Promise<SubscriptionRecord>;
   update(id: string, data: SubscriptionUpdate): Promise<SubscriptionRecord>;
-  appendEvent(input: {
-    subscriptionId: string;
-    eventType: EventType;
-    sourceEmailId?: string | null;
-    payload: Prisma.InputJsonValue;
-  }): Promise<void>;
-  recordPriceChange(input: {
-    subscriptionId: string;
-    oldAmountCents: number;
-    newAmountCents: number;
-    currency: string;
-    sourceEmailId?: string | null;
-  }): Promise<void>;
+  appendEvent(input: SubscriptionEventInput & { subscriptionId: string }): Promise<void>;
+  recordPriceChange(input: PriceChangeInput & { subscriptionId: string }): Promise<void>;
+  listEvents(subscriptionId: string): Promise<SubscriptionEventRecord[]>;
+  listPriceChanges(subscriptionId: string): Promise<PriceChangeRecord[]>;
   listDueRenewals(userId: string, from: Date, to: Date): Promise<SubscriptionRecord[]>;
   listStaleActive(userId: string, staleBefore: Date): Promise<SubscriptionRecord[]>;
+  applyWrite(write: SubscriptionWrite): Promise<SubscriptionRecord>;
 }
 
 export interface UserRepository {
@@ -114,12 +162,8 @@ export interface ProcessedEmailRepository {
 }
 
 export interface AuditRepository {
-  record(input: {
-    userId: string;
-    action: string;
-    actor: "system" | "user";
-    details: Prisma.InputJsonValue;
-  }): Promise<void>;
+  record(input: AuditInput): Promise<void>;
+  listByUser(userId: string, limit?: number): Promise<AuditRecord[]>;
 }
 
 export interface NotificationRepository {

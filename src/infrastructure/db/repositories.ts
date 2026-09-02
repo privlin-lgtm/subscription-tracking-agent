@@ -8,15 +8,21 @@ import type {
   SubscriptionStatus,
 } from "@prisma/client";
 import type {
+  AuditInput,
+  AuditRecord,
   AuditRepository,
   CreateSubscriptionInput,
   EmailSnapshotRepository,
   NotificationRepository,
+  PriceChangeInput,
+  PriceChangeRecord,
   ProcessedEmailRepository,
   ReviewRepository,
+  SubscriptionEventRecord,
   SubscriptionRecord,
   SubscriptionRepository,
   SubscriptionUpdate,
+  SubscriptionWrite,
   UserRepository,
   VendorAliasRepository,
 } from "@/domain/repositories";
@@ -61,14 +67,53 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
     await prisma.subscriptionEvent.create({ data: input });
   }
 
-  async recordPriceChange(input: {
-    subscriptionId: string;
-    oldAmountCents: number;
-    newAmountCents: number;
-    currency: string;
-    sourceEmailId?: string | null;
-  }): Promise<void> {
+  async recordPriceChange(input: PriceChangeInput & { subscriptionId: string }): Promise<void> {
     await prisma.priceChange.create({ data: input });
+  }
+
+  listEvents(subscriptionId: string): Promise<SubscriptionEventRecord[]> {
+    return prisma.subscriptionEvent.findMany({
+      where: { subscriptionId },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  listPriceChanges(subscriptionId: string): Promise<PriceChangeRecord[]> {
+    return prisma.priceChange.findMany({
+      where: { subscriptionId },
+      orderBy: { detectedAt: "desc" },
+    });
+  }
+
+  async applyWrite(write: SubscriptionWrite): Promise<SubscriptionRecord> {
+    return prisma.$transaction(async (tx) => {
+      let record: SubscriptionRecord;
+      if (write.create) {
+        record = await tx.subscription.create({ data: write.create });
+      } else if (write.update) {
+        record = await tx.subscription.update({
+          where: { id: write.update.id },
+          data: write.update.data,
+        });
+      } else {
+        throw new Error("Subscription write must create or update a row");
+      }
+
+      for (const event of write.events ?? []) {
+        await tx.subscriptionEvent.create({
+          data: { ...event, subscriptionId: record.id },
+        });
+      }
+      if (write.priceChange) {
+        await tx.priceChange.create({
+          data: { ...write.priceChange, subscriptionId: record.id },
+        });
+      }
+      if (write.audit) {
+        await tx.auditLog.create({ data: write.audit });
+      }
+      return record;
+    });
   }
 
   listDueRenewals(userId: string, from: Date, to: Date): Promise<SubscriptionRecord[]> {
@@ -78,6 +123,7 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
         status: "ACTIVE",
         nextRenewalDate: { gte: from, lte: to },
       },
+      orderBy: { nextRenewalDate: "asc" },
     });
   }
 
@@ -191,13 +237,16 @@ export class PrismaProcessedEmailRepository implements ProcessedEmailRepository 
 }
 
 export class PrismaAuditRepository implements AuditRepository {
-  async record(input: {
-    userId: string;
-    action: string;
-    actor: "system" | "user";
-    details: Prisma.InputJsonValue;
-  }) {
+  async record(input: AuditInput) {
     await prisma.auditLog.create({ data: input });
+  }
+
+  listByUser(userId: string, limit = 50): Promise<AuditRecord[]> {
+    return prisma.auditLog.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
   }
 }
 

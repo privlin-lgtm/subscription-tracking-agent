@@ -92,6 +92,7 @@ function createHarness(options?: {
   };
   const audit: AuditRepository = {
     record: vi.fn(async () => undefined),
+    listByUser: vi.fn(async () => []),
   };
   const clock: Clock = { now: () => new Date("2026-09-02T00:00:00Z") };
 

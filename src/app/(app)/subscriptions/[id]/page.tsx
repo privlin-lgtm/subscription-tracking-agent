@@ -3,6 +3,7 @@ import { auth } from "@/infrastructure/auth/auth";
 import { app } from "@/infrastructure/composition";
 import { minorToMajorUnits } from "@/domain/value-objects/money";
 import { CancelButton } from "./cancel-button";
+import { billingCycleToForm, EditSubscriptionForm } from "./edit-subscription-form";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +13,11 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
     redirect("/login");
   }
   const { id } = await params;
-  const item = await app.subscriptionService.get(session.user.id, id).catch(() => null);
-  if (!item) {
+  const detail = await app.subscriptionService.getDetail(session.user.id, id).catch(() => null);
+  if (!detail) {
     notFound();
   }
+  const { item, events, priceChanges } = detail;
 
   return (
     <main className="space-y-4">
@@ -50,6 +52,52 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
           </div>
         </dl>
         {item.status === "ACTIVE" ? <CancelButton id={item.id} /> : null}
+      </section>
+
+      {item.status !== "CANCELED" && item.status !== "DISMISSED" ? (
+        <EditSubscriptionForm
+          billingCycle={billingCycleToForm(item.billingCycle)}
+          currency={item.priceCurrency}
+          id={item.id}
+          nextRenewalDate={item.nextRenewalDate?.toISOString().slice(0, 10) ?? ""}
+          priceAmount={minorToMajorUnits(item.priceAmountCents, item.priceCurrency)}
+          vendor={item.vendorRaw}
+        />
+      ) : null}
+
+      <section className="rounded-xl border bg-white p-4">
+        <h2 className="font-medium">Price changes</h2>
+        {priceChanges.length === 0 ? (
+          <p className="mt-2 text-sm text-slate-500">No price changes recorded.</p>
+        ) : (
+          <ul className="mt-3 divide-y text-sm">
+            {priceChanges.map((change) => (
+              <li className="flex items-center justify-between py-2" key={change.id}>
+                <span>
+                  {minorToMajorUnits(change.oldAmountCents, change.currency).toFixed(2)} →{" "}
+                  {minorToMajorUnits(change.newAmountCents, change.currency).toFixed(2)} {change.currency}
+                </span>
+                <span className="text-slate-500">{change.detectedAt.toISOString().slice(0, 10)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="rounded-xl border bg-white p-4">
+        <h2 className="font-medium">History</h2>
+        {events.length === 0 ? (
+          <p className="mt-2 text-sm text-slate-500">No events yet.</p>
+        ) : (
+          <ol className="mt-3 space-y-2 text-sm">
+            {events.map((event) => (
+              <li className="flex items-center justify-between border-b py-2 last:border-0" key={event.id}>
+                <span className="font-medium">{event.eventType}</span>
+                <span className="text-slate-500">{event.createdAt.toISOString().slice(0, 19).replace("T", " ")}</span>
+              </li>
+            ))}
+          </ol>
+        )}
       </section>
     </main>
   );
