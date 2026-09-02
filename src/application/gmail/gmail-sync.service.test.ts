@@ -42,6 +42,7 @@ function createHarness(options?: {
   const metaGets: string[] = [];
   const users: UserRepository = {
     findByEmail: vi.fn(),
+    findOrCreateByEmail: vi.fn(),
     findById: vi.fn(async () => ({
       id: USER_ID,
       email: "paul@example.com",

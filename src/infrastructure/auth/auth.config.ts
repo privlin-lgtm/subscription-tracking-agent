@@ -1,4 +1,16 @@
 import type { NextAuthConfig } from "next-auth";
+import Google from "next-auth/providers/google";
+
+export const googleProvider = Google({
+  clientId: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  authorization: {
+    params: {
+      prompt: "select_account",
+      scope: "openid email profile",
+    },
+  },
+});
 
 export const authConfig = {
   secret: process.env.AUTH_SECRET,
@@ -7,7 +19,7 @@ export const authConfig = {
   pages: {
     signIn: "/login",
   },
-  providers: [],
+  providers: [googleProvider],
   callbacks: {
     jwt({ token, user }) {
       if (user?.id) {

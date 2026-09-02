@@ -10,7 +10,7 @@ Phase 4 Gmail integration is in place: read-only OAuth with PKCE and signed stat
 
 - Next.js 15 (App Router) and TypeScript
 - PostgreSQL and Prisma
-- Auth.js credentials authentication
+- Auth.js credentials and Google Sign-In (passkey, PIN, 2FA, and other Google account methods)
 - Gmail API (`gmail.readonly`)
 - OpenAI-compatible LLM provider
 - PostgreSQL advisory locks + `node-cron` worker
@@ -30,9 +30,10 @@ docs/                          Phase 1 architecture and Phase 2 technical design
 
 ## Local setup
 
-1. Copy `.env.example` to `.env` and set `AUTH_SECRET` plus `TOKEN_ENCRYPTION_KEY`.
-2. Start PostgreSQL: `docker compose up -d`
-3. Install and migrate:
+1. Copy `.env.example` to `.env` and set `AUTH_SECRET`, `TOKEN_ENCRYPTION_KEY`, and Google OAuth client credentials.
+2. On the Google Cloud OAuth client, add `{AUTH_URL}/api/auth/callback/google` (sign-in) and `{AUTH_URL}/api/gmail/callback` (inbox connect).
+3. Start PostgreSQL: `docker compose up -d`
+4. Install and migrate:
 
 ```bash
 npm install

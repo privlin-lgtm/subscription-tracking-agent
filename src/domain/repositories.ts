@@ -80,7 +80,7 @@ export interface SubscriptionRepository {
 }
 
 export interface UserRepository {
-  findByEmail(email: string): Promise<{ id: string; email: string; passwordHash: string } | null>;
+  findByEmail(email: string): Promise<{ id: string; email: string; passwordHash: string | null } | null>;
   findById(id: string): Promise<{
     id: string;
     email: string;
@@ -88,7 +88,8 @@ export interface UserRepository {
     gmailRefreshToken: string | null;
     gmailHistoryId: string | null;
   } | null>;
-  create(email: string, passwordHash: string): Promise<{ id: string; email: string }>;
+  create(email: string, passwordHash?: string | null): Promise<{ id: string; email: string }>;
+  findOrCreateByEmail(email: string): Promise<{ id: string; email: string }>;
   updateGmailConnection(
     userId: string,
     data: {

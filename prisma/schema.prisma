@@ -61,7 +61,7 @@ enum NotificationStatus {
 model User {
   id                  String    @id @default(cuid())
   email               String    @unique
-  passwordHash        String
+  passwordHash        String?
   gmailRefreshToken   String? // encrypted at the application layer before storage
   gmailHistoryId      String?
   gmailConnected      Boolean   @default(false)

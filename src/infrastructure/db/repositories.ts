@@ -113,11 +113,33 @@ export class PrismaUserRepository implements UserRepository {
     });
   }
 
-  create(email: string, passwordHash: string) {
+  create(email: string, passwordHash?: string | null) {
     return prisma.user.create({
-      data: { email, passwordHash },
+      data: { email, passwordHash: passwordHash ?? null },
       select: { id: true, email: true },
     });
+  }
+
+  async findOrCreateByEmail(email: string) {
+    const existing = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, email: true },
+    });
+    if (existing) {
+      return existing;
+    }
+    try {
+      return await this.create(email, null);
+    } catch {
+      const raced = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, email: true },
+      });
+      if (!raced) {
+        throw new Error("Unable to create user");
+      }
+      return raced;
+    }
   }
 
   async updateGmailConnection(
