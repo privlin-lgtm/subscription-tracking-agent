@@ -1,4 +1,4 @@
-# Privacy Policy
+# TollKeeper Privacy Policy
 
 *Drafted per the recommendation in [Phase 11 — Pre-Release Audit](phase11-pre-release-audit.md), which found that the technical mechanisms (minimal OAuth scope, encrypted credentials, working account deletion) were sound but that no user-facing privacy policy existed, and flagged that gap as "outside this repository's scope to write" from an engineering standpoint.*
 
@@ -10,7 +10,7 @@
 
 ## 1. Who this policy covers
 
-This Privacy Policy explains how `[TODO: legal entity / product name]` ("we", "us", the "Service") collects, uses, stores, and protects information when you use the subscription-tracking application (the "App"). It applies to anyone who creates an account, whether or not you connect Gmail.
+This Privacy Policy explains how **TollKeeper** (working product name — `[TODO: confirm formal legal entity name, e.g. an incorporated LLC/corporation, once set up]`; "we", "us", the "Service") collects, uses, stores, and protects information when you use the TollKeeper subscription-tracking application (the "App"). It applies to anyone who creates an account, whether or not you connect Gmail.
 
 ## 2. What we collect
 
@@ -30,7 +30,7 @@ When Gmail is connected, the App scans incoming mail for anything that looks lik
 
 - **Every message we look at** is recorded as a processed-email entry (Gmail's message ID, a sync cursor, and a classification — subscription / not-subscription / ambiguous) so we don't re-process the same message twice. This record does **not** include the email's content.
 - **Messages classified as subscription-related** are sent to an AI/LLM extraction service to pull out structured data (vendor name, price, currency, billing cycle, renewal date, and whether the message is a cancellation). Only the subject line, sender address, and up to the first 8,000 characters of the message body are sent for this purpose — see [§4, Third parties](#4-third-party-service-providers) below for who that provider is.
-- **A temporary snapshot** of the subject, sender, and body text of subscription-related messages is stored so the record can be reviewed or corrected later. This snapshot is automatically and permanently deleted after `[TODO: confirm production value]` days (30 days in the current default configuration) — we do not keep your raw email content indefinitely.
+- **A temporary snapshot** of the subject, sender, and body text of subscription-related messages is stored so the record can be reviewed or corrected later. This snapshot is automatically and permanently deleted after **30 days** — we do not keep your raw email content indefinitely.
 - Email content is always treated as untrusted data, not as instructions: the extraction step cannot take actions on your account, send mail, or render raw HTML back to you.
 
 ### 2.4 Subscription data we derive
@@ -57,10 +57,10 @@ We use a small number of subprocessors to operate the Service. We don't sell you
 | Provider | What they receive | Purpose |
 |---|---|---|
 | Google (Gmail API) | OAuth authorization; read-only access to mail you've connected | Letting the App read your inbox to detect subscriptions |
-| `[TODO: name the actual LLM provider you deploy with — the code defaults to OpenAI (api.openai.com), but LLM_BASE_URL is configurable]` | Subject line, sender address, and up to 8,000 characters of body text from messages classified as subscription-related | Extracting structured subscription data (vendor, price, dates) from the message text |
+| OpenAI (API) | Subject line, sender address, and up to 8,000 characters of body text from messages classified as subscription-related | Extracting structured subscription data (vendor, price, dates) from the message text |
 | `[TODO: name your database/hosting provider]` | All account and subscription data described in §2 | Hosting the application database |
 
-If you change or self-host the LLM endpoint (`LLM_BASE_URL`), update this table to reflect the actual provider before publishing, since that provider's own data-handling terms apply to the email content sent to it.
+We use OpenAI's API (not ChatGPT) for this extraction step. OpenAI does not use API data to train its models by default, and retains request data for up to 30 days for abuse-monitoring purposes (longer only if required by law or to protect against harm). `[TODO: consider requesting OpenAI's Zero Data Retention or Modified Abuse Monitoring option, given the content sent here is people's inbox data — contact OpenAI sales to enable it, then update this paragraph to reflect it]`. If this ever changes to a different or self-hosted LLM endpoint (`LLM_BASE_URL`), update this table and paragraph to reflect the actual provider's own data-handling terms before publishing.
 
 ## 5. How we protect your data
 
@@ -84,21 +84,21 @@ No method of storage or transmission is 100% secure, and we can't guarantee abso
 | Data | Retention |
 |---|---|
 | Account, subscriptions, event history, price-change history, review decisions, notifications | Kept for the life of your account; deleted immediately and permanently on account deletion |
-| Raw email snapshots (subject/sender/body of subscription-related mail) | Auto-deleted after `[TODO: confirm value]` days (30-day default), regardless of account deletion timing |
+| Raw email snapshots (subject/sender/body of subscription-related mail) | Auto-deleted after **30 days**, regardless of account deletion timing |
 | Processed-email log (message ID + classification only, no content) | Kept for the life of your account |
-| System audit log | Auto-deleted on a rolling `[TODO: confirm value]`-day window (180-day default) |
+| System audit log | Auto-deleted on a rolling **180-day** window |
 
 ## 8. Children's privacy
 
-The Service is not directed at children under `[TODO: 13 in the US / 16 in the EEA, or your chosen age]`, and we do not knowingly collect personal information from them.
+The Service is not directed at children under **16**, and we do not knowingly collect personal information from them.
 
 ## 9. Contact us
 
-`[TODO: real contact email/address for privacy requests — required before publishing]`
+`[TODO: privacy@tollkeeper.<tld> — custom-domain address, once the domain is registered and routed into Gmail; required before publishing]`
 
 ## 10. Changes to this policy
 
-We may update this policy as the Service changes. `[TODO: describe how you'll notify users of material changes — e.g. email notice or in-app banner]`. The "Last updated" date at the top of this page reflects the most recent revision.
+We may update this policy from time to time as the Service changes. When we make a material change — one that affects what we collect, how we use it, or your rights — we'll update the "Last updated" date above and show an in-app notice the next time you sign in, summarizing what changed. For minor changes (wording clarifications, fixed typos), we'll simply update the date without a separate notice. We encourage you to check this page periodically. Continuing to use the Service after a material change takes effect means you accept the revised policy.
 
 ---
 

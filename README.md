@@ -107,7 +107,7 @@ Working through the four remaining Phase 11 launch items in order, as decisions 
 
 - **Backups: decided.** Self-managed Postgres, daily `pg_dump --format=custom` shipped to S3-compatible object storage, 24-hour RPO. `scripts/backup-db.sh` / `scripts/restore-db.sh`, documented in [docs/backup-and-disaster-recovery.md](docs/backup-and-disaster-recovery.md) (setup, cron schedule, and how to actually test a restore rather than just trust one).
 - **Monitoring/alerting: decided (Sentry), integration in progress** — being installed outside this session; not yet wired into the error paths here to avoid colliding with that work.
-- **Gmail API quota strategy: not yet decided.**
+- **Gmail API quota strategy: decided** — request a quota increase near-term (an ops action, not yet executable since no production GCP project exists), migrate from polling to Gmail push notifications (`users.watch` + Pub/Sub) before scaling meaningfully toward 10,000 users. Scoped design, deliberately not implemented yet — no production traffic exists to justify the added infrastructure and complexity today. See [docs/gmail-quota-strategy.md](docs/gmail-quota-strategy.md).
 - **Legal/privacy review: draft exists** ([docs/privacy-policy.md](docs/privacy-policy.md)), engineering-authored and code-accurate, explicitly not published until a qualified legal reviewer signs off.
 
 ## Development Roadmap
