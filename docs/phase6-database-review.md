@@ -2,6 +2,8 @@
 
 *Phase 6 review-section output, per [subscription-tracking-agent-prompts.md](../subscription-tracking-agent-prompts.md) ("Database Review"). Evaluates the implemented persistence layer — [prisma/schema.prisma](../prisma/schema.prisma), [src/infrastructure/db/repositories.ts](../src/infrastructure/db/repositories.ts), and its callers in [src/application](../src/application) — against normalization, scalability, query performance, historical tracking, data retention, and auditing capabilities.*
 
+> **Update:** all six findings below (D1–D6) have since been fixed, plus the identical D1-class defect found in `ReviewService.confirm`/`dismiss` while implementing the fix. See the note at the end of the summary table.
+
 ---
 
 ## Normalization
@@ -16,6 +18,7 @@ The schema is a clean, mostly-3NF design: append-only history lives in dedicated
 - **Severity:** High
 - **Confidence:** High (code-verified: `applyWrite` exists and is used by `subscription.service.ts` but grepping `subscription-pipeline.service.ts` shows no call to it — every pipeline write is a sequence of independent repository calls)
 - **Recommendation:** route the pipeline's create/update/event/price-change/cancel writes through `applyWrite` the same way the manual CRUD path does. `processedEmails.record` and `notifications.createIfAbsent` can stay outside the transaction — calling them *after* a committed write is the safe order (worst case on a post-commit crash is a harmless re-processed message on next sync, versus today's silent, permanent loss of price/event history on a pre-commit crash).
+- **Resolved:** every write branch in `SubscriptionPipelineService` (`processMessage`'s no-match/renewal/price-change branches, `handleCancellation`, `createPendingReview`) now goes through `applyWrite`; `processedEmails`/`notifications` calls stay outside the transaction as recommended. The identical pattern was also found and fixed in `ReviewService.confirm`/`dismiss` ([subscription.service.ts](../src/application/subscriptions/subscription.service.ts)), and in `AlertJobs.runInactivityScan`'s per-item update. Covered by new/updated tests asserting the subscription row, its event, and its audit entry land together (`subscription-pipeline.service.test.ts`, `review.service.test.ts`, `alert.jobs.test.ts`).
 
 ## Data Retention Strategy
 
@@ -24,6 +27,7 @@ The schema is a clean, mostly-3NF design: append-only history lives in dedicated
 - **Finding D2 — `AuditLog`, `SubscriptionEvent`, and `PriceChange` have no retention policy and grow unbounded for the life of an active account.** This isn't a new gap — it's the still-open half of [Phase 1 architecture-review finding #7](architecture.md#architecture-review) (deletion is solved; *retention while the account stays active* is not). For personal-scale usage this isn't urgent, but it should be closed with an explicit policy (even if the answer is "keep forever, it's small") before the Phase 8 security review, since "unbounded" isn't itself a decision.
 - **Severity:** Low (accepted-scale risk today, but an explicit decision is still owed)
 - **Confidence:** High
+- **Resolved:** the explicit decision is now: `SubscriptionEvent`/`PriceChange` are the product's permanent record and are kept forever by design; `AuditLog` (a system/diagnostic trail, not user-facing history) gets a retention window instead — `AuditRepository.purgeOlderThan` plus `AlertJobs.purgeOldAuditLogs`, configurable via `AUDIT_LOG_RETENTION_DAYS` (default 180), scheduled daily in [worker.ts](../src/infrastructure/jobs/worker.ts).
 
 ## Scalability
 
@@ -31,6 +35,7 @@ The schema is a clean, mostly-3NF design: append-only history lives in dedicated
 - **Severity:** Medium (correct today at low user counts; becomes a real launch blocker at the scale the project has already committed to reviewing)
 - **Confidence:** High (code-verified loop structure)
 - **Recommendation:** either (a) replace the per-user loop with a single query across all connected users' subscriptions in the renewal/staleness window (`SubscriptionRepository.listDueRenewalsForUsers(userIds, from, to)`, backed by an index that leads with the filtered columns rather than `userId`), or, as a smaller first step, (b) run the existing per-user queries concurrently with a bounded concurrency limit instead of one `await` at a time — cheaper to ship, doesn't remove the round-trip count but removes the serial wall-clock multiplier.
+- **Resolved (option a):** added `listDueRenewalsForUsers`/`listStaleActiveForUsers` to `SubscriptionRepository`; both `AlertJobs` methods now issue exactly one query across all connected users instead of one per user. Covered by `alert.jobs.test.ts`, which asserts the batch method is called once and the old per-user method is never called.
 
 ## Query Performance
 
@@ -40,6 +45,7 @@ Index coverage generally matches the query shapes actually issued: `@@index([use
 - **Severity:** Low (a growing-but-still-personal-scale table; not a correctness issue, `summarizeSpend`'s filter is correct)
 - **Confidence:** High
 - **Recommendation:** extend `listByUser` (or add a dedicated method) to accept `status: SubscriptionStatus[]` / a Prisma `{ in: [...] }` filter, so the spend report queries only the rows it totals.
+- **Resolved:** `listByUser` now accepts `SubscriptionStatus | SubscriptionStatus[]`; `spendSummary` queries `[ACTIVE, INACTIVE]` directly. `summarizeSpend`'s own filter is kept as a defensive second layer (and its existing test, which feeds it a `CANCELED` row directly, still passes unchanged).
 
 ## Auditing Capabilities
 
@@ -58,25 +64,27 @@ This correctly no-ops on a duplicate `(userId, idempotencyKey)`, but it identica
 - **Severity:** Medium
 - **Confidence:** High (code-verified: the catch has no error-type check)
 - **Recommendation:** check for Prisma's unique-constraint violation specifically (`error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002"`) and rethrow anything else.
+- **Resolved:** `createIfAbsent` now checks for `Prisma.PrismaClientKnownRequestError` with code `P2002` specifically and rethrows anything else. Since real errors now propagate instead of being swallowed, the two scheduled-job cron callbacks in [worker.ts](../src/infrastructure/jobs/worker.ts) were also wrapped in a small `runJob` error-logging helper (matching the try/catch the Gmail-sync cron loop already had), so a failure surfaces in logs instead of becoming an unhandled rejection.
 
 **Finding D6 (minor) — `listEvents`/`listPriceChanges` accept a bare `subscriptionId` with no `userId`, relying entirely on the calling service to authorize first.** Verified safe today: `SubscriptionService.getDetail` always calls the `userId`-scoped `get()` (which 404s on a non-owned id) before calling either method. But the repository contract itself doesn't enforce tenant isolation — a future direct caller of `listEvents`/`listPriceChanges` that skips the ownership check would silently leak another user's subscription history. `findActiveByVendor` and `listByUser`, by contrast, take `userId` directly and can't make this mistake.
 - **Severity:** Low (no current exploit path; a defense-in-depth gap, not a live vulnerability)
 - **Confidence:** Medium (depends on future code discipline, not a present defect)
 - **Recommendation:** thread `userId` through `listEvents(userId, subscriptionId)` / `listPriceChanges(userId, subscriptionId)` and join through `Subscription.userId` in the query, so tenant isolation is structural rather than convention.
+- **Resolved:** both methods now take `userId` first and filter via `subscription: { userId }` in the Prisma query (a relation filter, not an app-code check). The in-memory test double enforces the same scoping, and a new test confirms a mismatched `userId` returns `[]` rather than another user's history.
 
 ---
 
 ## Summary and Schema Improvements
 
-| # | Finding | Area | Severity | Confidence |
-|---|---|---|---|---|
-| D1 | Pipeline writes bypass `applyWrite` — a mid-sequence crash can silently lose price/event history | Historical tracking | **High** | High |
-| D3 | Per-connected-user serial query loop in `AlertJobs` — won't scale to the stated 10,000-user target | Scalability | Medium | High |
-| D5 | `createIfAbsent` swallows real errors as harmless duplicates | Auditing / reliability | Medium | High |
-| D2 | No retention policy for `AuditLog`/`SubscriptionEvent`/`PriceChange` (deletion is solved, retention isn't) | Data retention | Low | High |
-| D4 | Spend summary over-fetches then filters in app code; `listByUser` can't filter by status set | Query performance | Low | High |
-| D6 | History reads aren't `userId`-scoped at the repository layer | Auditing / normalization | Low | Medium |
+| # | Finding | Area | Severity | Confidence | Status |
+|---|---|---|---|---|---|
+| D1 | Pipeline writes bypass `applyWrite` — a mid-sequence crash can silently lose price/event history | Historical tracking | **High** | High | **Fixed** |
+| D3 | Per-connected-user serial query loop in `AlertJobs` — won't scale to the stated 10,000-user target | Scalability | Medium | High | **Fixed** |
+| D5 | `createIfAbsent` swallows real errors as harmless duplicates | Auditing / reliability | Medium | High | **Fixed** |
+| D2 | No retention policy for `AuditLog`/`SubscriptionEvent`/`PriceChange` (deletion is solved, retention isn't) | Data retention | Low | High | **Fixed** |
+| D4 | Spend summary over-fetches then filters in app code; `listByUser` can't filter by status set | Query performance | Low | High | **Fixed** |
+| D6 | History reads aren't `userId`-scoped at the repository layer | Auditing / normalization | Low | Medium | **Fixed** |
 
-**Recommended order:** D1 first — it's the one finding that undermines a guarantee the schema was explicitly built to provide, and it sits on the highest-traffic write path (every Gmail message). D3 matters before any real user-count growth but isn't urgent at current scale. D5 is a small, high-value fix (one error-type check). D2, D4, and D6 are reasonable to defer — none are incorrect today, they're each a small hardening pass once the higher-severity items are closed.
+**Recommended order (as originally reviewed):** D1 first — it's the one finding that undermines a guarantee the schema was explicitly built to provide, and it sits on the highest-traffic write path (every Gmail message). D3 matters before any real user-count growth but isn't urgent at current scale. D5 is a small, high-value fix (one error-type check). D2, D4, and D6 were reasonable to defer, but all six were fixed together in this pass rather than staged.
 
-This is a review only; none of the above has been changed in this pass.
+**All six findings are now fixed.** While implementing D1, the identical bypass-the-transaction pattern turned up in `ReviewService.confirm`/`dismiss` (a second manual-write path, not originally in scope) and was fixed the same way for consistency — `ReviewService` no longer takes an `AuditRepository` dependency directly, since the audit write now happens inside `applyWrite`. Full test suite: 72/72 passing; `tsc --noEmit`, `eslint`, and `next build` all clean.

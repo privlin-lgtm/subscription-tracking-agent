@@ -1,12 +1,5 @@
-import type {
-  BillingCycle,
-  EmailClassification,
-  EventType,
-  NotificationType,
-  Prisma,
-  ReviewDecisionType,
-  SubscriptionStatus,
-} from "@prisma/client";
+import { Prisma, SubscriptionStatus } from "@prisma/client";
+import type { BillingCycle, EmailClassification, EventType, NotificationType, ReviewDecisionType } from "@prisma/client";
 import type {
   AuditInput,
   AuditRecord,
@@ -29,9 +22,17 @@ import type {
 import { prisma } from "@/infrastructure/db/prisma";
 
 export class PrismaSubscriptionRepository implements SubscriptionRepository {
-  async listByUser(userId: string, status?: SubscriptionStatus): Promise<SubscriptionRecord[]> {
+  async listByUser(
+    userId: string,
+    status?: SubscriptionStatus | SubscriptionStatus[],
+  ): Promise<SubscriptionRecord[]> {
+    const statusFilter = Array.isArray(status)
+      ? { in: status }
+      : status
+        ? status
+        : { not: SubscriptionStatus.DISMISSED };
     return prisma.subscription.findMany({
-      where: { userId, ...(status ? { status } : { status: { not: "DISMISSED" } }) },
+      where: { userId, status: statusFilter },
       orderBy: { updatedAt: "desc" },
     });
   }
@@ -71,16 +72,16 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
     await prisma.priceChange.create({ data: input });
   }
 
-  listEvents(subscriptionId: string): Promise<SubscriptionEventRecord[]> {
+  listEvents(userId: string, subscriptionId: string): Promise<SubscriptionEventRecord[]> {
     return prisma.subscriptionEvent.findMany({
-      where: { subscriptionId },
+      where: { subscriptionId, subscription: { userId } },
       orderBy: { createdAt: "desc" },
     });
   }
 
-  listPriceChanges(subscriptionId: string): Promise<PriceChangeRecord[]> {
+  listPriceChanges(userId: string, subscriptionId: string): Promise<PriceChangeRecord[]> {
     return prisma.priceChange.findMany({
-      where: { subscriptionId },
+      where: { subscriptionId, subscription: { userId } },
       orderBy: { detectedAt: "desc" },
     });
   }
@@ -134,6 +135,34 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
         status: "ACTIVE",
         nextRenewalDate: { lt: staleBefore },
       },
+    });
+  }
+
+  listDueRenewalsForUsers(userIds: string[], from: Date, to: Date): Promise<SubscriptionRecord[]> {
+    if (userIds.length === 0) {
+      return Promise.resolve([]);
+    }
+    return prisma.subscription.findMany({
+      where: {
+        userId: { in: userIds },
+        status: "ACTIVE",
+        nextRenewalDate: { gte: from, lte: to },
+      },
+      orderBy: [{ userId: "asc" }, { nextRenewalDate: "asc" }],
+    });
+  }
+
+  listStaleActiveForUsers(userIds: string[], staleBefore: Date): Promise<SubscriptionRecord[]> {
+    if (userIds.length === 0) {
+      return Promise.resolve([]);
+    }
+    return prisma.subscription.findMany({
+      where: {
+        userId: { in: userIds },
+        status: "ACTIVE",
+        nextRenewalDate: { lt: staleBefore },
+      },
+      orderBy: [{ userId: "asc" }],
     });
   }
 }
@@ -248,6 +277,11 @@ export class PrismaAuditRepository implements AuditRepository {
       take: limit,
     });
   }
+
+  async purgeOlderThan(cutoff: Date): Promise<number> {
+    const result = await prisma.auditLog.deleteMany({ where: { createdAt: { lt: cutoff } } });
+    return result.count;
+  }
 }
 
 export class PrismaNotificationRepository implements NotificationRepository {
@@ -262,8 +296,11 @@ export class PrismaNotificationRepository implements NotificationRepository {
     try {
       await prisma.notification.create({ data: input });
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        return false;
+      }
+      throw error;
     }
   }
 

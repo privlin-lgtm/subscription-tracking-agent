@@ -2,7 +2,7 @@ import { EventType, SubscriptionStatus } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { Clock, ExtractionAgent, ExtractionInput, ExtractionResult, GmailClient, TokenEncryptor } from "@/domain/ports";
 import type {
-  AuditRepository,
+  AuditRecord,
   EmailSnapshotRepository,
   NotificationRepository,
   ProcessedEmailRepository,
@@ -75,14 +75,14 @@ function buildHarness(fixtures: PipelineFixture[]) {
   const extractionBySubject = new Map<string, ExtractionResult | "extraction_failure">(
     fixtures.map((f) => [f.message.subject, f.extraction]),
   );
-  const subscriptions = new InMemorySubscriptions();
+  const auditRows: AuditRecord[] = [];
+  const subscriptions = new InMemorySubscriptions(auditRows);
   const processedEmails = new InMemoryProcessedEmails();
   const notifications: NotificationRepository = {
     createIfAbsent: vi.fn(async () => true),
     listByUser: vi.fn(async () => []),
     markRead: vi.fn(async () => undefined),
   };
-  const audit: AuditRepository = { record: vi.fn(async () => undefined), listByUser: vi.fn(async () => []) };
   const snapshots: EmailSnapshotRepository = {
     save: vi.fn(async () => undefined),
     get: vi.fn(async () => null),
@@ -101,7 +101,6 @@ function buildHarness(fixtures: PipelineFixture[]) {
     users,
     subscriptions,
     processedEmails,
-    audit,
     notifications,
     snapshots,
     vendorAliases,
@@ -114,12 +113,12 @@ function buildHarness(fixtures: PipelineFixture[]) {
     snapshotTtlDays: 30,
   });
 
-  return { pipeline, subscriptions, processedEmails, notifications };
+  return { pipeline, subscriptions, processedEmails, notifications, auditRows };
 }
 
 describe("subscription pipeline (fixture-driven)", () => {
-  it("creates a new ACTIVE subscription on first receipt", async () => {
-    const { pipeline, subscriptions, processedEmails } = buildHarness([NEW_SUBSCRIPTION]);
+  it("creates a new ACTIVE subscription on first receipt, atomically with its event and audit entry", async () => {
+    const { pipeline, subscriptions, processedEmails, auditRows } = buildHarness([NEW_SUBSCRIPTION]);
 
     await pipeline.processMessage(USER_ID, NEW_SUBSCRIPTION.message, "10");
 
@@ -129,6 +128,11 @@ describe("subscription pipeline (fixture-driven)", () => {
     expect(created[0].vendorNormalized).toBe("Netflix");
     expect(subscriptions.events[0].eventType).toBe(EventType.CREATED);
     expect(await processedEmails.exists(USER_ID, NEW_SUBSCRIPTION.message.id)).toBe(true);
+    // The subscription row, its CREATED event, and the audit entry are written by one
+    // applyWrite call — see docs/phase6-database-review.md (D1).
+    expect(auditRows).toEqual([
+      expect.objectContaining({ userId: USER_ID, action: "subscription.pipeline.apply" }),
+    ]);
   });
 
   it("treats a later renewal date as RENEWED, not a new subscription", async () => {
@@ -143,8 +147,8 @@ describe("subscription pipeline (fixture-driven)", () => {
     expect(subscriptions.events.map((e) => e.eventType)).toEqual([EventType.CREATED, EventType.RENEWED]);
   });
 
-  it("detects a price increase, records history, and notifies", async () => {
-    const { pipeline, subscriptions, notifications } = buildHarness([NEW_SUBSCRIPTION, PRICE_INCREASE]);
+  it("detects a price increase, records history atomically, and notifies", async () => {
+    const { pipeline, subscriptions, notifications, auditRows } = buildHarness([NEW_SUBSCRIPTION, PRICE_INCREASE]);
 
     await pipeline.processMessage(USER_ID, NEW_SUBSCRIPTION.message, "10");
     await pipeline.processMessage(USER_ID, PRICE_INCREASE.message, "11");
@@ -156,6 +160,9 @@ describe("subscription pipeline (fixture-driven)", () => {
     expect(notifications.createIfAbsent).toHaveBeenCalledWith(
       expect.objectContaining({ type: "PRICE_INCREASE" }),
     );
+    // The updated price, its PRICE_CHANGED event, and the price-change row all come from the
+    // same applyWrite call, so none of them can land without the others.
+    expect(auditRows).toHaveLength(2);
   });
 
   it("treats a repeat receipt for the same period as a silent duplicate, not a new event", async () => {
@@ -222,7 +229,7 @@ describe("subscription pipeline (fixture-driven)", () => {
   });
 
   it("auto-cancels an existing ACTIVE subscription on a high-confidence cancellation email", async () => {
-    const { pipeline, subscriptions } = buildHarness([NEW_SUBSCRIPTION, CANCELLATION_CONFIRMED]);
+    const { pipeline, subscriptions, auditRows } = buildHarness([NEW_SUBSCRIPTION, CANCELLATION_CONFIRMED]);
 
     await pipeline.processMessage(USER_ID, NEW_SUBSCRIPTION.message, "10");
     await pipeline.processMessage(USER_ID, CANCELLATION_CONFIRMED.message, "11");
@@ -231,10 +238,14 @@ describe("subscription pipeline (fixture-driven)", () => {
     const record = [...subscriptions.records.values()][0];
     expect(record.status).toBe(SubscriptionStatus.CANCELED);
     expect(subscriptions.events.map((e) => e.eventType)).toEqual([EventType.CREATED, EventType.CANCELED]);
+    expect(auditRows.map((row) => row.action)).toEqual([
+      "subscription.pipeline.apply",
+      "subscription.pipeline.cancel",
+    ]);
   });
 
   it("flags an existing subscription for review on a low-confidence cancellation signal, instead of auto-canceling", async () => {
-    const { pipeline, subscriptions, notifications } = buildHarness([NEW_SUBSCRIPTION, CANCELLATION_AMBIGUOUS]);
+    const { pipeline, subscriptions, notifications, auditRows } = buildHarness([NEW_SUBSCRIPTION, CANCELLATION_AMBIGUOUS]);
 
     await pipeline.processMessage(USER_ID, NEW_SUBSCRIPTION.message, "10");
     await pipeline.processMessage(USER_ID, CANCELLATION_AMBIGUOUS.message, "11");
@@ -246,6 +257,7 @@ describe("subscription pipeline (fixture-driven)", () => {
     expect(notifications.createIfAbsent).toHaveBeenCalledWith(
       expect.objectContaining({ type: "PENDING_REVIEW" }),
     );
+    expect(auditRows.at(-1)?.action).toBe("subscription.pipeline.flag_possible_cancellation");
   });
 
   it("is a no-op for a cancellation email with no matching active subscription", async () => {

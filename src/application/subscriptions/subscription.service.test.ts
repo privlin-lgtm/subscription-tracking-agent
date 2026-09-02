@@ -156,4 +156,36 @@ describe("SubscriptionService persistence", () => {
     });
     await expect(svc.get("other", created.id)).rejects.toBeInstanceOf(NotFoundError);
   });
+
+  it("scopes history reads to the owning user at the repository layer too (defense in depth)", async () => {
+    const { svc, subscriptions } = service();
+    const created = await svc.create(USER_ID, {
+      vendor: "Hulu",
+      priceAmount: 18,
+      currency: "USD",
+      billingCycle: "monthly",
+    });
+
+    expect(await subscriptions.listEvents("other", created.id)).toEqual([]);
+    expect(await subscriptions.listPriceChanges("other", created.id)).toEqual([]);
+    expect(await subscriptions.listEvents(USER_ID, created.id)).not.toEqual([]);
+  });
+
+  it("excludes CANCELED and PENDING_REVIEW subscriptions from the spend summary query itself", async () => {
+    const { svc, subscriptions } = service();
+    await svc.create(USER_ID, { vendor: "Active", priceAmount: 10, currency: "USD", billingCycle: "monthly" });
+    const toCancel = await svc.create(USER_ID, {
+      vendor: "Canceled",
+      priceAmount: 20,
+      currency: "USD",
+      billingCycle: "monthly",
+    });
+    await svc.cancel(USER_ID, toCancel.id);
+
+    const summary = await svc.spendSummary(USER_ID);
+    expect(summary).toEqual({ mixed: false, currency: "USD", totalCents: 1000, subscriptionCount: 1 });
+
+    const fetched = await subscriptions.listByUser(USER_ID, [SubscriptionStatus.ACTIVE, SubscriptionStatus.INACTIVE]);
+    expect(fetched.map((item) => item.vendorNormalized)).toEqual(["Active"]);
+  });
 });

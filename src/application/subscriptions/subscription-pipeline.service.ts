@@ -4,7 +4,6 @@ import { Money } from "@/domain/value-objects/money";
 import { isIso4217 } from "@/shared/iso-4217";
 import { ConflictError } from "@/domain/errors";
 import type {
-  AuditRepository,
   CreateSubscriptionInput,
   EmailSnapshotRepository,
   NotificationRepository,
@@ -27,7 +26,6 @@ type PipelineDeps = {
   users: UserRepository;
   subscriptions: SubscriptionRepository;
   processedEmails: ProcessedEmailRepository;
-  audit: AuditRepository;
   notifications: NotificationRepository;
   snapshots: EmailSnapshotRepository;
   vendorAliases: VendorAliasRepository;
@@ -165,58 +163,64 @@ export class SubscriptionPipelineService {
       return;
     }
 
+    const auditForDecision = {
+      userId,
+      action: "subscription.pipeline.apply",
+      actor: "system" as const,
+      details: { messageId: message.id, vendor: vendor.canonical, decision: decision.kind },
+    };
+
     if (decision.kind === "no_match") {
-      const created = await this.deps.subscriptions.create({
-        userId,
-        vendorNormalized: vendor.canonical,
-        vendorRaw: extraction.vendor,
-        status: SubscriptionStatus.ACTIVE,
-        priceAmountCents: money.amountCents,
-        priceCurrency: money.currency,
-        billingCycle: toBillingCycle(extraction.billingCycle),
-        nextRenewalDate: extraction.renewalDate,
-        lastSeenEmailId: message.id,
-        confidenceScore: calibrated.confidence,
-      });
-      await this.deps.subscriptions.appendEvent({
-        subscriptionId: created.id,
-        eventType: EventType.CREATED,
-        sourceEmailId: message.id,
-        payload: extraction as unknown as object,
+      await this.deps.subscriptions.applyWrite({
+        create: {
+          userId,
+          vendorNormalized: vendor.canonical,
+          vendorRaw: extraction.vendor,
+          status: SubscriptionStatus.ACTIVE,
+          priceAmountCents: money.amountCents,
+          priceCurrency: money.currency,
+          billingCycle: toBillingCycle(extraction.billingCycle),
+          nextRenewalDate: extraction.renewalDate,
+          lastSeenEmailId: message.id,
+          confidenceScore: calibrated.confidence,
+        },
+        events: [{ eventType: EventType.CREATED, sourceEmailId: message.id, payload: extraction as unknown as object }],
+        audit: auditForDecision,
       });
     } else if (decision.kind === "renewal") {
-      await this.deps.subscriptions.update(decision.subscription.id, {
-        nextRenewalDate: extraction.renewalDate,
-        lastSeenEmailId: message.id,
-        status: SubscriptionStatus.ACTIVE,
-        confidenceScore: calibrated.confidence,
-      });
-      await this.deps.subscriptions.appendEvent({
-        subscriptionId: decision.subscription.id,
-        eventType: EventType.RENEWED,
-        sourceEmailId: message.id,
-        payload: extraction as unknown as object,
+      await this.deps.subscriptions.applyWrite({
+        update: {
+          id: decision.subscription.id,
+          data: {
+            nextRenewalDate: extraction.renewalDate,
+            lastSeenEmailId: message.id,
+            status: SubscriptionStatus.ACTIVE,
+            confidenceScore: calibrated.confidence,
+          },
+        },
+        events: [{ eventType: EventType.RENEWED, sourceEmailId: message.id, payload: extraction as unknown as object }],
+        audit: auditForDecision,
       });
     } else {
-      await this.deps.subscriptions.update(decision.subscription.id, {
-        priceAmountCents: money.amountCents,
-        nextRenewalDate: extraction.renewalDate,
-        lastSeenEmailId: message.id,
-        status: SubscriptionStatus.ACTIVE,
-        confidenceScore: calibrated.confidence,
-      });
-      await this.deps.subscriptions.appendEvent({
-        subscriptionId: decision.subscription.id,
-        eventType: EventType.PRICE_CHANGED,
-        sourceEmailId: message.id,
-        payload: extraction as unknown as object,
-      });
-      await this.deps.subscriptions.recordPriceChange({
-        subscriptionId: decision.subscription.id,
-        oldAmountCents: decision.subscription.priceAmountCents,
-        newAmountCents: money.amountCents,
-        currency: money.currency,
-        sourceEmailId: message.id,
+      await this.deps.subscriptions.applyWrite({
+        update: {
+          id: decision.subscription.id,
+          data: {
+            priceAmountCents: money.amountCents,
+            nextRenewalDate: extraction.renewalDate,
+            lastSeenEmailId: message.id,
+            status: SubscriptionStatus.ACTIVE,
+            confidenceScore: calibrated.confidence,
+          },
+        },
+        events: [{ eventType: EventType.PRICE_CHANGED, sourceEmailId: message.id, payload: extraction as unknown as object }],
+        priceChange: {
+          oldAmountCents: decision.subscription.priceAmountCents,
+          newAmountCents: money.amountCents,
+          currency: money.currency,
+          sourceEmailId: message.id,
+        },
+        audit: auditForDecision,
       });
       await this.deps.notifications.createIfAbsent({
         userId,
@@ -233,12 +237,6 @@ export class SubscriptionPipelineService {
       gmailMessageId: message.id,
       gmailHistoryId: historyId,
       classification: EmailClassification.SUBSCRIPTION,
-    });
-    await this.deps.audit.record({
-      userId,
-      action: "subscription.pipeline.apply",
-      actor: "system",
-      details: { messageId: message.id, vendor: vendor.canonical, decision: decision.kind },
     });
   }
 
@@ -273,12 +271,15 @@ export class SubscriptionPipelineService {
       calibrated.confidence >= this.deps.autoApplyThreshold && vendor.kind !== "fuzzy";
 
     if (confidentCancellation) {
-      await this.deps.subscriptions.update(active.id, { status: SubscriptionStatus.CANCELED });
-      await this.deps.subscriptions.appendEvent({
-        subscriptionId: active.id,
-        eventType: EventType.CANCELED,
-        sourceEmailId: message.id,
-        payload: extraction as unknown as object,
+      await this.deps.subscriptions.applyWrite({
+        update: { id: active.id, data: { status: SubscriptionStatus.CANCELED } },
+        events: [{ eventType: EventType.CANCELED, sourceEmailId: message.id, payload: extraction as unknown as object }],
+        audit: {
+          userId,
+          action: "subscription.pipeline.cancel",
+          actor: "system",
+          details: { messageId: message.id, subscriptionId: active.id, vendor: vendor.canonical },
+        },
       });
       await this.deps.processedEmails.record({
         userId,
@@ -286,30 +287,26 @@ export class SubscriptionPipelineService {
         gmailHistoryId: historyId,
         classification: EmailClassification.SUBSCRIPTION,
       });
-      await this.deps.audit.record({
-        userId,
-        action: "subscription.pipeline.cancel",
-        actor: "system",
-        details: { messageId: message.id, subscriptionId: active.id, vendor: vendor.canonical },
-      });
       return;
     }
 
-    await this.deps.subscriptions.update(active.id, {
-      status: SubscriptionStatus.PENDING_REVIEW,
-      reviewReason: "possible_cancellation_low_confidence",
+    await this.deps.subscriptions.applyWrite({
+      update: {
+        id: active.id,
+        data: { status: SubscriptionStatus.PENDING_REVIEW, reviewReason: "possible_cancellation_low_confidence" },
+      },
+      audit: {
+        userId,
+        action: "subscription.pipeline.flag_possible_cancellation",
+        actor: "system",
+        details: { messageId: message.id, subscriptionId: active.id, vendor: vendor.canonical },
+      },
     });
     await this.deps.processedEmails.record({
       userId,
       gmailMessageId: message.id,
       gmailHistoryId: historyId,
       classification: EmailClassification.AMBIGUOUS,
-    });
-    await this.deps.audit.record({
-      userId,
-      action: "subscription.pipeline.flag_possible_cancellation",
-      actor: "system",
-      details: { messageId: message.id, subscriptionId: active.id, vendor: vendor.canonical },
     });
     await this.deps.notifications.createIfAbsent({
       userId,
@@ -350,17 +347,20 @@ export class SubscriptionPipelineService {
 
     let created: SubscriptionRecord;
     try {
-      created = await this.deps.subscriptions.create(recordInput);
+      created = await this.deps.subscriptions.applyWrite({
+        create: recordInput,
+        events: [
+          {
+            eventType: EventType.CREATED,
+            sourceEmailId: messageId,
+            payload: { reason: input.reason, extraction: input.extraction ?? null },
+          },
+        ],
+      });
     } catch {
       throw new ConflictError("Unable to create pending review item");
     }
 
-    await this.deps.subscriptions.appendEvent({
-      subscriptionId: created.id,
-      eventType: EventType.CREATED,
-      sourceEmailId: messageId,
-      payload: { reason: input.reason, extraction: input.extraction ?? null },
-    });
     await this.deps.processedEmails.record({
       userId,
       gmailMessageId: messageId,

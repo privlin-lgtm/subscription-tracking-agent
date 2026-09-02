@@ -37,7 +37,6 @@ export function createApp() {
     users,
     subscriptions,
     processedEmails,
-    audit,
     notifications,
     snapshots,
     vendorAliases,
@@ -58,7 +57,7 @@ export function createApp() {
     locks,
     registerService: new RegisterService(users),
     subscriptionService: new SubscriptionService(subscriptions, audit),
-    reviewService: new ReviewService(subscriptions, reviews, audit),
+    reviewService: new ReviewService(subscriptions, reviews),
     gmailSync: new GmailSyncService(
       users,
       processedEmails,
@@ -80,6 +79,7 @@ export function createApp() {
       systemClock,
       appConfig.renewalReminderDays,
       appConfig.inactivityGraceCycles,
+      appConfig.auditLogRetentionDays,
     ),
   };
 }

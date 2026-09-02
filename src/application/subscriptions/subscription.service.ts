@@ -51,14 +51,17 @@ export class SubscriptionService {
   async getDetail(userId: string, id: string): Promise<SubscriptionDetail> {
     const item = await this.get(userId, id);
     const [events, priceChanges] = await Promise.all([
-      this.subscriptions.listEvents(id),
-      this.subscriptions.listPriceChanges(id),
+      this.subscriptions.listEvents(userId, id),
+      this.subscriptions.listPriceChanges(userId, id),
     ]);
     return { item, events, priceChanges };
   }
 
   async spendSummary(userId: string): Promise<SpendSummary> {
-    const items = await this.subscriptions.listByUser(userId);
+    const items = await this.subscriptions.listByUser(userId, [
+      SubscriptionStatus.ACTIVE,
+      SubscriptionStatus.INACTIVE,
+    ]);
     return summarizeSpend(items);
   }
 
@@ -248,7 +251,6 @@ export class ReviewService {
   constructor(
     private readonly subscriptions: SubscriptionRepository,
     private readonly reviews: ReviewRepository,
-    private readonly audit: AuditRepository,
   ) {}
 
   listPending(userId: string): Promise<SubscriptionRecord[]> {
@@ -269,21 +271,30 @@ export class ReviewService {
       priceCurrency = money.currency;
     }
 
-    const updated = await this.subscriptions.update(id, {
-      status: SubscriptionStatus.ACTIVE,
-      vendorNormalized: input.vendorNormalized ?? item.vendorNormalized,
-      priceAmountCents,
-      priceCurrency,
-      billingCycle: input.billingCycle ? toBillingCycle(input.billingCycle) : item.billingCycle,
-      nextRenewalDate: input.nextRenewalDate ? new Date(input.nextRenewalDate) : item.nextRenewalDate,
-      reviewReason: null,
+    const updated = await this.subscriptions.applyWrite({
+      update: {
+        id,
+        data: {
+          status: SubscriptionStatus.ACTIVE,
+          vendorNormalized: input.vendorNormalized ?? item.vendorNormalized,
+          priceAmountCents,
+          priceCurrency,
+          billingCycle: input.billingCycle ? toBillingCycle(input.billingCycle) : item.billingCycle,
+          nextRenewalDate: input.nextRenewalDate ? new Date(input.nextRenewalDate) : item.nextRenewalDate,
+          reviewReason: null,
+        },
+      },
+      events: [{ eventType: EventType.REVIEW_CONFIRMED, payload: { edited, input } }],
+      audit: {
+        userId,
+        action: "review.confirm",
+        actor: "user",
+        details: { subscriptionId: id, edited },
+      },
     });
 
-    await this.subscriptions.appendEvent({
-      subscriptionId: id,
-      eventType: EventType.REVIEW_CONFIRMED,
-      payload: { edited, input },
-    });
+    // Secondary, human-readable decision log — the subscription's own status and event
+    // history (just committed above) is already the source of truth for what happened.
     await this.reviews.recordDecision({
       subscriptionId: id,
       userId,
@@ -291,37 +302,30 @@ export class ReviewService {
       notes: input.notes,
       editedPayload: edited ? (input as object) : undefined,
     });
-    await this.audit.record({
-      userId,
-      action: "review.confirm",
-      actor: "user",
-      details: { subscriptionId: id, edited },
-    });
     return updated;
   }
 
   async dismiss(userId: string, id: string, notes?: string): Promise<SubscriptionRecord> {
     await this.requirePending(userId, id);
-    const updated = await this.subscriptions.update(id, {
-      status: SubscriptionStatus.DISMISSED,
-      reviewReason: notes ?? "dismissed_by_user",
+    const updated = await this.subscriptions.applyWrite({
+      update: {
+        id,
+        data: { status: SubscriptionStatus.DISMISSED, reviewReason: notes ?? "dismissed_by_user" },
+      },
+      events: [{ eventType: EventType.REVIEW_DISMISSED, payload: { notes: notes ?? null } }],
+      audit: {
+        userId,
+        action: "review.dismiss",
+        actor: "user",
+        details: { subscriptionId: id },
+      },
     });
-    await this.subscriptions.appendEvent({
-      subscriptionId: id,
-      eventType: EventType.REVIEW_DISMISSED,
-      payload: { notes: notes ?? null },
-    });
+
     await this.reviews.recordDecision({
       subscriptionId: id,
       userId,
       decision: ReviewDecisionType.DISMISS,
       notes,
-    });
-    await this.audit.record({
-      userId,
-      action: "review.dismiss",
-      actor: "user",
-      details: { subscriptionId: id },
     });
     return updated;
   }

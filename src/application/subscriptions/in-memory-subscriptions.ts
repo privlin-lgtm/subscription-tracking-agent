@@ -22,13 +22,17 @@ export class InMemorySubscriptions implements SubscriptionRepository {
 
   constructor(private readonly auditRows: AuditRecord[] = []) {}
 
-  async listByUser(userId: string, status?: SubscriptionStatus): Promise<SubscriptionRecord[]> {
+  async listByUser(
+    userId: string,
+    status?: SubscriptionStatus | SubscriptionStatus[],
+  ): Promise<SubscriptionRecord[]> {
+    const statuses = Array.isArray(status) ? status : status ? [status] : null;
     return [...this.records.values()].filter((record) => {
       if (record.userId !== userId) {
         return false;
       }
-      if (status) {
-        return record.status === status;
+      if (statuses) {
+        return statuses.includes(record.status);
       }
       return record.status !== SubscriptionStatus.DISMISSED;
     });
@@ -91,13 +95,19 @@ export class InMemorySubscriptions implements SubscriptionRepository {
     });
   }
 
-  async listEvents(subscriptionId: string): Promise<SubscriptionEventRecord[]> {
+  async listEvents(userId: string, subscriptionId: string): Promise<SubscriptionEventRecord[]> {
+    if (this.records.get(subscriptionId)?.userId !== userId) {
+      return [];
+    }
     return this.events
       .filter((event) => event.subscriptionId === subscriptionId)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
-  async listPriceChanges(subscriptionId: string): Promise<PriceChangeRecord[]> {
+  async listPriceChanges(userId: string, subscriptionId: string): Promise<PriceChangeRecord[]> {
+    if (this.records.get(subscriptionId)?.userId !== userId) {
+      return [];
+    }
     return this.priceChanges
       .filter((change) => change.subscriptionId === subscriptionId)
       .sort((a, b) => b.detectedAt.getTime() - a.detectedAt.getTime());
@@ -117,6 +127,30 @@ export class InMemorySubscriptions implements SubscriptionRepository {
     return [...this.records.values()].filter(
       (record) =>
         record.userId === userId &&
+        record.status === SubscriptionStatus.ACTIVE &&
+        record.updatedAt.getTime() < staleBefore.getTime(),
+    );
+  }
+
+  async listDueRenewalsForUsers(userIds: string[], from: Date, to: Date): Promise<SubscriptionRecord[]> {
+    const idSet = new Set(userIds);
+    return [...this.records.values()]
+      .filter(
+        (record) =>
+          idSet.has(record.userId) &&
+          record.status === SubscriptionStatus.ACTIVE &&
+          record.nextRenewalDate &&
+          record.nextRenewalDate.getTime() >= from.getTime() &&
+          record.nextRenewalDate.getTime() <= to.getTime(),
+      )
+      .sort((a, b) => (a.nextRenewalDate?.getTime() ?? 0) - (b.nextRenewalDate?.getTime() ?? 0));
+  }
+
+  async listStaleActiveForUsers(userIds: string[], staleBefore: Date): Promise<SubscriptionRecord[]> {
+    const idSet = new Set(userIds);
+    return [...this.records.values()].filter(
+      (record) =>
+        idSet.has(record.userId) &&
         record.status === SubscriptionStatus.ACTIVE &&
         record.updatedAt.getTime() < staleBefore.getTime(),
     );
@@ -171,6 +205,14 @@ export class InMemoryAudit implements AuditRepository {
       .filter((row) => row.userId === userId)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, limit);
+  }
+
+  async purgeOlderThan(cutoff: Date): Promise<number> {
+    const before = this.rows.length;
+    const kept = this.rows.filter((row) => row.createdAt.getTime() >= cutoff.getTime());
+    this.rows.length = 0;
+    this.rows.push(...kept);
+    return before - kept.length;
   }
 }
 

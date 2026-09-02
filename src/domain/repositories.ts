@@ -113,17 +113,20 @@ export type SubscriptionWrite = {
 };
 
 export interface SubscriptionRepository {
-  listByUser(userId: string, status?: SubscriptionStatus): Promise<SubscriptionRecord[]>;
+  listByUser(userId: string, status?: SubscriptionStatus | SubscriptionStatus[]): Promise<SubscriptionRecord[]>;
   getByIdForUser(userId: string, id: string): Promise<SubscriptionRecord | null>;
   findActiveByVendor(userId: string, vendorNormalized: string): Promise<SubscriptionRecord[]>;
   create(input: CreateSubscriptionInput): Promise<SubscriptionRecord>;
   update(id: string, data: SubscriptionUpdate): Promise<SubscriptionRecord>;
   appendEvent(input: SubscriptionEventInput & { subscriptionId: string }): Promise<void>;
   recordPriceChange(input: PriceChangeInput & { subscriptionId: string }): Promise<void>;
-  listEvents(subscriptionId: string): Promise<SubscriptionEventRecord[]>;
-  listPriceChanges(subscriptionId: string): Promise<PriceChangeRecord[]>;
+  listEvents(userId: string, subscriptionId: string): Promise<SubscriptionEventRecord[]>;
+  listPriceChanges(userId: string, subscriptionId: string): Promise<PriceChangeRecord[]>;
   listDueRenewals(userId: string, from: Date, to: Date): Promise<SubscriptionRecord[]>;
   listStaleActive(userId: string, staleBefore: Date): Promise<SubscriptionRecord[]>;
+  /** Batch variants used by scheduled jobs so they issue one query across all connected users instead of one per user. */
+  listDueRenewalsForUsers(userIds: string[], from: Date, to: Date): Promise<SubscriptionRecord[]>;
+  listStaleActiveForUsers(userIds: string[], staleBefore: Date): Promise<SubscriptionRecord[]>;
   applyWrite(write: SubscriptionWrite): Promise<SubscriptionRecord>;
 }
 
@@ -164,6 +167,8 @@ export interface ProcessedEmailRepository {
 export interface AuditRepository {
   record(input: AuditInput): Promise<void>;
   listByUser(userId: string, limit?: number): Promise<AuditRecord[]>;
+  /** Deletes audit rows older than `cutoff`, returning the number removed. */
+  purgeOlderThan(cutoff: Date): Promise<number>;
 }
 
 export interface NotificationRepository {
