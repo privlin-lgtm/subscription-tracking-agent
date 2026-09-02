@@ -99,7 +99,16 @@ npm run worker
 ## Phase 11 decisions
 
 - **Pre-release audit: Conditional Go** (see [docs/phase11-pre-release-audit.md](docs/phase11-pre-release-audit.md)): synthesizes Phases 1–10 and adds independent coverage of monitoring, alerting, and disaster recovery — none of which exist yet in this repo (no APM/error tracking, no operational alerting, no documented backup/restore procedure) and all three are correctly infrastructure/vendor decisions this review can flag but not make. This phase also found and fixed its own High-severity gap: **no user-facing account deletion existed at all** — the database cascade was correct (verified in Phase 6) but nothing could trigger it, leaving GDPR Article 17 (right to erasure) with no working path. Added `UserRepository.deleteAccount`, a `DELETE /api/account` route, and a confirm-then-delete Settings UI that signs the user out on success — **live-verified**: registered a real account against an isolated Postgres instance, deleted it through the actual UI, and confirmed a subsequent login with the same credentials correctly fails.
-- **Remaining launch items are all decisions, not defects**: choose monitoring/alerting tooling, document and test a backup/restore procedure, decide the Gmail API quota strategy (Phase 10, L4), and get a legal review of privacy/terms language. Every code-fixable blocker found across all eleven phases has been fixed.
+- **Remaining launch items are all decisions, not defects**: choose monitoring/alerting tooling, document and test a backup/restore procedure, decide the Gmail API quota strategy (Phase 10, L4), and get a legal review of privacy/terms language (a first engineering draft now exists at [docs/privacy-policy.md](docs/privacy-policy.md)). Every code-fixable blocker found across all eleven phases has been fixed.
+
+## Post-Phase-11 operational decisions
+
+Working through the four remaining Phase 11 launch items in order, as decisions get made (no production environment exists yet — this is building the pieces so they're ready the moment one does):
+
+- **Backups: decided.** Self-managed Postgres, daily `pg_dump --format=custom` shipped to S3-compatible object storage, 24-hour RPO. `scripts/backup-db.sh` / `scripts/restore-db.sh`, documented in [docs/backup-and-disaster-recovery.md](docs/backup-and-disaster-recovery.md) (setup, cron schedule, and how to actually test a restore rather than just trust one).
+- **Monitoring/alerting: decided (Sentry), integration in progress** — being installed outside this session; not yet wired into the error paths here to avoid colliding with that work.
+- **Gmail API quota strategy: not yet decided.**
+- **Legal/privacy review: draft exists** ([docs/privacy-policy.md](docs/privacy-policy.md)), engineering-authored and code-accurate, explicitly not published until a qualified legal reviewer signs off.
 
 ## Development Roadmap
 
@@ -129,6 +138,7 @@ See [subscription-tracking-agent-prompts.md](subscription-tracking-agent-prompts
 - [docs/phase9-engineering-review.md](docs/phase9-engineering-review.md) — Phase 9 output: principal-engineer review (critical/major/minor issues, refactoring suggestions, test coverage, architecture alignment, release recommendation).
 - [docs/phase10-scalability-review.md](docs/phase10-scalability-review.md) — Phase 10 output: scalability review at a 10,000-user assumption, covering architecture, reliability, scaling strategy, database load, Gmail API quotas, cost model, and background processing, with launch blockers and fixes/recommendations.
 - [docs/phase11-pre-release-audit.md](docs/phase11-pre-release-audit.md) — Phase 11 output: CTO-level pre-release audit synthesizing all prior phases plus new coverage of monitoring, alerting, disaster recovery, and compliance, with a Go/No-Go recommendation and the full cross-phase launch-blocker list.
+- [docs/privacy-policy.md](docs/privacy-policy.md) — engineering-authored first draft of a user-facing privacy policy, written from the actual schema/config/LLM-integration to close the gap Phase 11 flagged ("Get a legal/privacy review of user-facing policy language"). Contains `[TODO]` placeholders for legal entity, hosting provider, and contact details, and needs an actual legal review before publishing.
 
 ## Security and Privacy
 
