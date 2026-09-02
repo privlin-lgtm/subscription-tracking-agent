@@ -1,6 +1,6 @@
 import { EventType, ReviewDecisionType, SubscriptionStatus } from "@prisma/client";
 import { NotFoundError, ValidationError } from "@/domain/errors";
-import { Money } from "@/domain/value-objects/money";
+import { minorToMajorUnits, Money } from "@/domain/value-objects/money";
 import { normalizeVendorKey, titleCaseVendor } from "@/domain/value-objects/vendor-name";
 import type {
   AuditRecord,
@@ -143,7 +143,7 @@ export class SubscriptionService {
 
     if (input.priceAmount !== undefined || input.currency !== undefined) {
       const money = Money.fromMajor(
-        input.priceAmount ?? item.priceAmountCents / 100,
+        input.priceAmount ?? minorToMajorUnits(item.priceAmountCents, item.priceCurrency),
         input.currency ?? item.priceCurrency,
       );
       data.priceAmountCents = money.amountCents;
@@ -266,7 +266,10 @@ export class ReviewService {
     let priceAmountCents = item.priceAmountCents;
     let priceCurrency = item.priceCurrency;
     if (input.priceAmount !== undefined || input.currency) {
-      const money = Money.fromMajor(input.priceAmount ?? item.priceAmountCents / 100, input.currency ?? item.priceCurrency);
+      const money = Money.fromMajor(
+        input.priceAmount ?? minorToMajorUnits(item.priceAmountCents, item.priceCurrency),
+        input.currency ?? item.priceCurrency,
+      );
       priceAmountCents = money.amountCents;
       priceCurrency = money.currency;
     }

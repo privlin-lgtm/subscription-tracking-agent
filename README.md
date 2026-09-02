@@ -86,6 +86,10 @@ npm run worker
 - **Also fixed**: the catch-all API error logger printed the raw error object, which for Gmail API failures (Gaxios-style errors) risked writing OAuth tokens into server logs — now logs only the message. The token encryptor silently fell back to reusing the session-signing secret when `TOKEN_ENCRYPTION_KEY` was unset — that fallback is removed, so a missing key now fails clearly instead of silently weakening credential separation.
 - **Reviewed, no issues found**: OAuth (PKCE, signed/expiring/user-bound state, cookie flags), credential storage (bcrypt, AES-256-GCM), data retention, and the rendering layer (no `dangerouslySetInnerHTML`/`eval` anywhere, so a malicious vendor name can't become executing script or markup).
 
+## Phase 9 decisions
+
+- **Engineering review, no critical/major issues found** (see [docs/phase9-engineering-review.md](docs/phase9-engineering-review.md)): an independent pass beyond Phases 5/6/8's narrower lenses found and fixed three minor issues — a dead unreachable branch in `matchSubscription` (now an explicit assertion instead of a silent guess), a currency-conversion helper (`minorToMajorUnits`) that existed but was unused while two call sites duplicated the same math incorrectly for non-2-decimal currencies (closes [Phase 5 finding V4](docs/phase5-extraction-validation.md)), and two untested defensive error branches. Current coverage: 97.78% lines, 88.59% branches, 93.47% functions, 228 tests.
+
 ## Development Roadmap
 
 1. [x] Define requirements and system architecture.
@@ -111,6 +115,7 @@ See [subscription-tracking-agent-prompts.md](subscription-tracking-agent-prompts
 - [docs/phase7-data-quality-validation.md](docs/phase7-data-quality-validation.md) — Phase 7 output: 100-example adversarial email set and data-quality review of the pipeline's handling of each, with findings, fixes, and category-by-category results.
 - [docs/phase8-security-review.md](docs/phase8-security-review.md) — Phase 8 output: risk matrix covering OAuth, stored credentials, prompt injection, sensitive data exposure, logging, and retention, with severity ratings.
 - [docs/phase8-prompt-injection-testing.md](docs/phase8-prompt-injection-testing.md) — Phase 8 output: malicious-email examples (prompt injections, jailbreaks, hidden instructions, HTML-based and embedded-content attacks) and the defense each one exercises.
+- [docs/phase9-engineering-review.md](docs/phase9-engineering-review.md) — Phase 9 output: principal-engineer review (critical/major/minor issues, refactoring suggestions, test coverage, architecture alignment, release recommendation).
 
 ## Security and Privacy
 

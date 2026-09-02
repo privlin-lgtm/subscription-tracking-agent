@@ -47,7 +47,10 @@ export function matchSubscription(input: {
     return { kind: "price_change", subscription: candidate };
   }
 
-  return { kind: "renewal", subscription: candidate };
+  // priceSame && !dateUnchanged implies input.renewalDate is set (dateUnchanged is
+  // unconditionally true whenever it's absent), so the `renewal` branch above is exhaustive
+  // for every other combination. This is unreachable — asserted, not silently duplicated.
+  throw new Error("unreachable: matchSubscription decision tree did not resolve to a kind");
 }
 
 function sameUtcDay(a: Date, b: Date): boolean {

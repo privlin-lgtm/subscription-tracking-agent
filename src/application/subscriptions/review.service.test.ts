@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ReviewRepository } from "@/domain/repositories";
 import { createInMemoryPersistence } from "@/application/subscriptions/in-memory-subscriptions";
 import { ReviewService } from "@/application/subscriptions/subscription.service";
-import { ValidationError } from "@/domain/errors";
+import { NotFoundError, ValidationError } from "@/domain/errors";
 
 const USER_ID = "user_1";
 
@@ -86,5 +86,11 @@ describe("ReviewService", () => {
 
     await expect(svc.confirm(USER_ID, created.id)).rejects.toBeInstanceOf(ValidationError);
     await expect(svc.dismiss(USER_ID, created.id)).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("rejects resolving an id that doesn't exist at all", async () => {
+    const { svc } = service();
+    await expect(svc.confirm(USER_ID, "missing")).rejects.toBeInstanceOf(NotFoundError);
+    await expect(svc.dismiss(USER_ID, "missing")).rejects.toBeInstanceOf(NotFoundError);
   });
 });

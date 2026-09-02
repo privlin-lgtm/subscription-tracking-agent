@@ -146,6 +146,27 @@ describe("SubscriptionService persistence", () => {
     );
   });
 
+  it("rejects an unparseable renewal date", async () => {
+    const { svc } = service();
+    await expect(
+      svc.create(USER_ID, { vendor: "Hulu", priceAmount: 18, currency: "USD", billingCycle: "monthly", nextRenewalDate: "not-a-date" }),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("converts existing minor units correctly for a currency-only edit on a zero-decimal currency", async () => {
+    // Regression test: a currency-only edit used to recompute the existing amount as
+    // priceAmountCents / 100, which is wrong for a currency like JPY where 1 minor unit
+    // equals 1 major unit, not 1/100.
+    const { svc } = service();
+    const created = await svc.create(USER_ID, { vendor: "Netflix", priceAmount: 1500, currency: "JPY", billingCycle: "monthly" });
+    expect(created.priceAmountCents).toBe(1500);
+
+    const updated = await svc.update(USER_ID, created.id, { currency: "USD" });
+    // 1500 JPY minor units = 1500 major units; re-expressed in USD (2-decimal) that's 150000 cents.
+    expect(updated.priceAmountCents).toBe(150000);
+    expect(updated.priceCurrency).toBe("USD");
+  });
+
   it("scopes reads to the owning user", async () => {
     const { svc } = service();
     const created = await svc.create(USER_ID, {
