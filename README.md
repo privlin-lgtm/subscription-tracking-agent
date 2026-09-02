@@ -64,7 +64,7 @@ npm run worker
 - **Confidence is never trusted raw**: known-billing-domain and exact-vendor-match signals boost it; invalid currency, missing/invalid price, implausible renewal date, or unknown billing cycle cap it below the auto-apply threshold (skipped for cancellations, which legitimately omit those fields).
 - **Vendor safety net**: exact alias match is trusted; a fuzzy match (Dice coefficient ≥ 0.88) is never auto-applied, always routed to review, so near-miss vendor names are never silently merged.
 - **Cancellation handling**: a detected cancellation auto-cancels the matching `ACTIVE` subscription only when confidence clears the auto-apply threshold and the vendor match is exact; otherwise the existing subscription is flagged `PENDING_REVIEW` (`possible_cancellation_low_confidence`) rather than silently left `ACTIVE` or duplicated.
-- **Known gaps** (see [docs/phase5-extraction-validation.md](docs/phase5-extraction-validation.md)): confirmed vendor reviews don't yet feed back into the alias table, and the prefilter keyword list needs widening once Phase 7 adversarial testing surfaces real gaps.
+- **Known gaps** (see [docs/phase5-extraction-validation.md](docs/phase5-extraction-validation.md)): confirmed vendor reviews don't yet feed back into the alias table. The prefilter keyword list was widened once Phase 7 adversarial testing surfaced a real gap (`"trial ends"` → `"trial"`) — see [docs/phase7-data-quality-validation.md](docs/phase7-data-quality-validation.md).
 
 ## Phase 6 decisions
 
@@ -77,7 +77,8 @@ npm run worker
 
 - **Unit coverage target is scoped**: `npm run test:coverage` measures application, domain, shared, and Gmail parse/retry helpers (not Next.js routes, Prisma, or the Google SDK client) and currently reports 96% lines / 93% functions, failing the build under 90%.
 - **Integration tests drive the real sync → pipeline → alert path** against in-memory repositories and a fake inbox, using the same fixtures as extraction.
-- **End-to-end scenarios** cover new subscription, renewal, cancellation, trial upgrade, price increase, duplicate receipt, a receipt lookalike, and Gmail auth failure. Adversarial email generation and data-quality review remain the Claude prompts in this phase.
+- **End-to-end scenarios** cover new subscription, renewal, cancellation, trial upgrade, price increase, duplicate receipt, a receipt lookalike, and Gmail auth failure.
+- **Adversarial testing + data-quality validation, both fixed** (see [docs/phase7-data-quality-validation.md](docs/phase7-data-quality-validation.md)): 100 hand-annotated adversarial emails across ambiguous invoices, trial subscriptions, international currencies, mixed languages, changed pricing models, and partial renewal notices, run through the real pipeline. Found and fixed a high-severity bug (a monthly→annual price change updated the price but silently left the old `billingCycle` on the record forever) and a medium-severity one (the prefilter's `"trial ends"` keyword missed most real trial-lifecycle phrasing, silently dropping those emails before the LLM ever saw them — widened to `"trial"`). All 100 cases pass after the fixes.
 
 ## Development Roadmap
 
@@ -101,6 +102,7 @@ See [subscription-tracking-agent-prompts.md](subscription-tracking-agent-prompts
 - [docs/phase5-extraction-design.md](docs/phase5-extraction-design.md) — Phase 5 output: extraction prompt/schema, validation rules, vendor/matching strategy, cancellation handling.
 - [docs/phase5-extraction-validation.md](docs/phase5-extraction-validation.md) — Phase 5 output: QA review of vendor accuracy, false positive/negative risk, international billing, currency conversion, and lifecycle edge cases, with severity/confidence ratings.
 - [docs/phase6-database-review.md](docs/phase6-database-review.md) — Phase 6 output: database review covering normalization, scalability, query performance, historical tracking, data retention, and auditing, with severity/confidence ratings and recommended schema improvements.
+- [docs/phase7-data-quality-validation.md](docs/phase7-data-quality-validation.md) — Phase 7 output: 100-example adversarial email set and data-quality review of the pipeline's handling of each, with findings, fixes, and category-by-category results.
 
 ## Security and Privacy
 

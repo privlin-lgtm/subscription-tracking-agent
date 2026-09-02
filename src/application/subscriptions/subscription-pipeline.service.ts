@@ -192,6 +192,7 @@ export class SubscriptionPipelineService {
         update: {
           id: decision.subscription.id,
           data: {
+            billingCycle: toBillingCycle(extraction.billingCycle),
             nextRenewalDate: extraction.renewalDate,
             lastSeenEmailId: message.id,
             status: SubscriptionStatus.ACTIVE,
@@ -207,6 +208,7 @@ export class SubscriptionPipelineService {
           id: decision.subscription.id,
           data: {
             priceAmountCents: money.amountCents,
+            billingCycle: toBillingCycle(extraction.billingCycle),
             nextRenewalDate: extraction.renewalDate,
             lastSeenEmailId: message.id,
             status: SubscriptionStatus.ACTIVE,

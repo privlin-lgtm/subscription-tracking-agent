@@ -8,7 +8,7 @@ export const SUBSCRIPTION_KEYWORDS = [
   "payment confirmation",
   "your plan",
   "membership",
-  "trial ends",
+  "trial",
   "auto-renew",
   "autorenew",
   "recurring",
