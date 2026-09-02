@@ -1,3 +1,15 @@
+import * as Sentry from "@sentry/nextjs";
+
+// This worker is a standalone Node process (not served by Next.js), so it never goes
+// through instrumentation.ts / sentry.server.config.ts -- it needs its own Sentry.init(),
+// called before anything else can throw.
+Sentry.init({
+  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+  enabled: Boolean(process.env.NEXT_PUBLIC_SENTRY_DSN),
+  environment: process.env.NODE_ENV,
+  tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
+});
+
 import cron from "node-cron";
 import { GmailAuthError } from "@/domain/errors";
 import { createApp } from "@/infrastructure/composition";
@@ -24,6 +36,7 @@ async function runJob(name: string, fn: () => Promise<unknown>): Promise<void> {
     await fn();
   } catch (error) {
     console.error(`${name} failed:`, error instanceof Error ? error.message : "unknown");
+    Sentry.captureException(error, { tags: { job: name } });
   } finally {
     runningJobs.delete(name);
   }
@@ -57,6 +70,7 @@ async function run(): Promise<void> {
             return;
           }
           console.error(`Gmail sync failed for user ${userId}:`, error instanceof Error ? error.message : "unknown");
+          Sentry.captureException(error, { tags: { job: "gmail sync" }, extra: { userId } });
         }
       });
     }),
@@ -65,7 +79,11 @@ async function run(): Promise<void> {
   console.log("Subscription tracker worker started");
 }
 
-run().catch((error: unknown) => {
+run().catch(async (error: unknown) => {
   console.error(error instanceof Error ? error.message : "worker failed");
+  Sentry.captureException(error, { tags: { job: "worker startup" } });
+  // Sentry reports asynchronously -- without this, process.exit() below can kill the
+  // process before the event actually reaches Sentry.
+  await Sentry.flush(2000);
   process.exit(1);
 });

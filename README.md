@@ -16,6 +16,7 @@ Phase 5 subscription detection is designed, implemented, and validated: calibrat
 - Gmail API (`gmail.readonly`)
 - OpenAI-compatible LLM provider
 - PostgreSQL advisory locks + `node-cron` worker
+- Sentry (error tracking, web app + worker)
 
 ## Layout
 
@@ -50,6 +51,15 @@ Optional worker (renewal reminders, inactivity scan, snapshot purge, periodic Gm
 ```bash
 npm run worker
 ```
+
+### Error tracking (Sentry)
+
+Errors from the web app (`instrumentation.ts`, `instrumentation-client.ts`, `sentry.*.config.ts`,
+`app/global-error.tsx`) and the worker (`infrastructure/jobs/worker.ts`) report to Sentry when
+`NEXT_PUBLIC_SENTRY_DSN` is set; leave it blank to run with Sentry disabled. Sign up at
+[sentry.io](https://sentry.io), create a Next.js project, and set `NEXT_PUBLIC_SENTRY_DSN` in
+`.env`. `SENTRY_ORG`, `SENTRY_PROJECT`, and `SENTRY_AUTH_TOKEN` are optional and only needed to
+upload source maps on build (Settings > Auth Tokens, scope `project:releases`).
 
 ## Phase 3 decisions
 

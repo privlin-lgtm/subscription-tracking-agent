@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { ZodError } from "zod";
 import { auth } from "@/infrastructure/auth/auth";
 import { DomainError } from "@/domain/errors";
@@ -35,6 +36,10 @@ export function jsonError(error: unknown): NextResponse {
   // including Authorization headers and request bodies — to error.config/error.response, so
   // console.error(error) risks writing access/refresh tokens straight into server logs.
   console.error(error instanceof Error ? error.message : "unknown error");
+  // Sentry captures the Error's own name/message/stack, not arbitrary properties like the
+  // Gaxios .config/.response mentioned above, so this doesn't reopen that leak. Only reaches
+  // here for genuinely unexpected errors -- DomainError/ZodError (expected, 4xx) both return above.
+  Sentry.captureException(error);
   return NextResponse.json({ error: "Internal server error" }, { status: 500 });
 }
 
