@@ -1,6 +1,7 @@
 {
   "name": "subscription-tracking-agent",
   "version": "0.1.0",
+  "license": "UNLICENSED",
   "private": true,
   "description": "AI-powered subscription tracker that scans Gmail invoices and receipts to automatically discover, monitor, and analyze recurring subscriptions.",
   "scripts": {
