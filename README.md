@@ -153,3 +153,20 @@ See [subscription-tracking-agent-prompts.md](subscription-tracking-agent-prompts
 ## Security and Privacy
 
 The implementation requests `gmail.readonly` only, encrypts refresh tokens at rest under a dedicated key (no session-secret fallback), scopes all queries by `user_id`, treats email bodies as untrusted LLM data with no tool/action capability given to the model, and keeps raw snapshots and audit logs on a TTL. State-changing actions against an *existing* subscription (cancellation) require both model confidence and a verified sender domain — see [docs/phase8-security-review.md](docs/phase8-security-review.md) for the full risk matrix.
+
+<!-- yanshuf-secrets -->
+## Local secrets
+
+These files are gitignored and exist in no clone. Fetch them before running this project:
+
+- `.env`
+
+**Where:** `G:\My Drive\Secrets Vault (ENCRYPTED)\` - take the most recent
+`yanshuf-secrets-YYYY-MM-DD.7z`. AES-256 with encrypted headers; the password is in
+my password manager. There is no recovery path without it.
+
+A second copy lives at `C:\Users\privlin\secrets-backup\` on the primary machine.
+
+Extract over the repo root preserving paths. `_RESTORE-README.txt` inside the archive
+lists every file it holds with SHA256s, so you can confirm what you restored.
+
