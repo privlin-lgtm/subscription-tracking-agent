@@ -33,7 +33,7 @@ export default function LoginForm() {
 
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-xs">
         <h1 className="text-2xl font-semibold">Sign in</h1>
         <p className="mt-1 text-sm text-slate-600">
           Use Google to sign in with a passkey, PIN, or any other method on your Google account.
