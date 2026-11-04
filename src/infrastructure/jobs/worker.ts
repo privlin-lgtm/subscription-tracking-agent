@@ -1,3 +1,5 @@
+// Prisma 7 no longer loads .env implicitly; this standalone process must do it itself.
+import "dotenv/config";
 import * as Sentry from "@sentry/nextjs";
 
 // This worker is a standalone Node process (not served by Next.js), so it never goes
