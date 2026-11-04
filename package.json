@@ -28,7 +28,7 @@
     "bcryptjs": "^2.4.3",
     "googleapis": "^159.0.0",
     "next": "^15.5.2",
-    "next-auth": "5.0.0-beta.29",
+    "next-auth": "5.0.0-beta.32",
     "node-cron": "^3.0.3",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
