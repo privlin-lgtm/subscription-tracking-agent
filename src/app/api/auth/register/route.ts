@@ -4,7 +4,7 @@ import { jsonError } from "@/infrastructure/http/api";
 import { app } from "@/infrastructure/composition";
 
 const schema = z.object({
-  email: z.string().email(),
+  email: z.email(),
   password: z.string().min(10),
 });
 
