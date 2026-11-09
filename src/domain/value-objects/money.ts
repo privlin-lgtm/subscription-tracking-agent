@@ -21,6 +21,12 @@ export function minorToMajorUnits(cents: number, currency: string): number {
   return cents / minorUnitsFor(currency);
 }
 
+/** Formats a minor-unit amount with the currency's own number of decimals (JPY 0, USD 2, KWD 3). */
+export function formatMinorAmount(cents: number, currency: string): string {
+  const decimals = Math.round(Math.log10(minorUnitsFor(currency)));
+  return minorToMajorUnits(cents, currency).toFixed(decimals);
+}
+
 export class Money {
   readonly amountCents: number;
   readonly currency: string;
