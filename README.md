@@ -61,6 +61,13 @@ Errors from the web app (`instrumentation.ts`, `instrumentation-client.ts`, `sen
 `.env`. `SENTRY_ORG`, `SENTRY_PROJECT`, and `SENTRY_AUTH_TOKEN` are optional and only needed to
 upload source maps on build (Settings > Auth Tokens, scope `project:releases`).
 
+## Renewal calendar and export
+
+- **Calendar** (`/calendar`): a month grid of renewals for `ACTIVE` subscriptions. It shows the stored next renewal date plus later dates estimated from the billing cycle (weekly, monthly, annual), drawn dashed. Month totals are per currency and never combined. Dates are UTC days. The week starts on Sunday; change `WEEK_STARTS_ON` in `src/application/subscriptions/renewal-calendar.ts`.
+- **`GET /api/export/renewals.ics`**: the next 90 days of renewals (`?days=1..365`) as an iCalendar download, one all-day event per renewal with a stable UID, so importing a newer download into a calendar app updates events instead of duplicating them.
+- **`GET /api/export/subscriptions.csv`**: the subscriptions list as CSV (UTF-8 with BOM). Text cells that start with `=`, `+`, `-` or `@` get a leading apostrophe so spreadsheets do not run them as formulas.
+- Both exports require sign-in and only return the signed-in user's data.
+
 ## Phase 3 decisions
 
 - **Pending review workflow**: low-confidence items become `PENDING_REVIEW` subscriptions. Users confirm or dismiss them from `/reviews` (`POST /api/reviews/:id/confirm|dismiss`). Confirm may include edits. Dismiss is terminal (`DISMISSED`).
