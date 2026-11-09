@@ -26,7 +26,6 @@ export default async function SubscriptionsPage() {
         </div>
         <a
           className="rounded-lg border bg-white px-3 py-2 text-sm font-medium text-ink-800 hover:bg-slate-50"
-          download
           href="/api/export/subscriptions.csv"
         >
           Export subscriptions (CSV)

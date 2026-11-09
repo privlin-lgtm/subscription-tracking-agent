@@ -99,10 +99,10 @@ export default async function CalendarPage({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <a className={BUTTON} download href="/api/export/renewals.ics">
+          <a className={BUTTON} href="/api/export/renewals.ics">
             Download renewals (.ics)
           </a>
-          <a className={BUTTON} download href="/api/export/subscriptions.csv">
+          <a className={BUTTON} href="/api/export/subscriptions.csv">
             Export subscriptions (CSV)
           </a>
         </div>

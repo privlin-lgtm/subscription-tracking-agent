@@ -51,8 +51,6 @@ export function weekdayLabels(weekStartsOn: number = WEEK_STARTS_ON): string[] {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** Guards the projection loop; a weekly subscription across a full year is 53 occurrences. */
-const MAX_OCCURRENCES_PER_SUBSCRIPTION = 400;
 
 export function utcDay(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
@@ -96,6 +94,29 @@ function occurrenceDate(anchor: Date, cycle: BillingCycle, step: number): Date |
 }
 
 /**
+ * A step at or just before the first occurrence on or after `startMs`, so the projection
+ * loop only walks the requested range however old the stored renewal date is.
+ */
+function firstStepNear(anchor: Date, cycle: BillingCycle, startMs: number): number {
+  if (anchor.getTime() >= startMs) {
+    return 0;
+  }
+  const start = new Date(startMs);
+  const monthsApart =
+    (start.getUTCFullYear() - anchor.getUTCFullYear()) * 12 + (start.getUTCMonth() - anchor.getUTCMonth());
+  switch (cycle) {
+    case BillingCycle.WEEKLY:
+      return Math.floor((startMs - anchor.getTime()) / (7 * DAY_MS));
+    case BillingCycle.MONTHLY:
+      return Math.max(0, monthsApart - 1);
+    case BillingCycle.ANNUAL:
+      return Math.max(0, Math.floor(monthsApart / 12) - 1);
+    default:
+      return 0;
+  }
+}
+
+/**
  * Lists every renewal that falls between `from` and `to` (inclusive, by UTC day): the stored
  * next renewal date, plus later dates projected from the billing cycle. Never projects
  * backwards from the stored date. Callers pass the subscriptions they want included (the
@@ -115,7 +136,8 @@ export function projectRenewals(
       continue;
     }
     const anchor = utcDay(subscription.nextRenewalDate);
-    for (let step = 0; step < MAX_OCCURRENCES_PER_SUBSCRIPTION; step += 1) {
+    // Start near the range instead of walking every cycle since a long-past stored date.
+    for (let step = firstStepNear(anchor, subscription.billingCycle, start); ; step += 1) {
       const date = occurrenceDate(anchor, subscription.billingCycle, step);
       if (!date || date.getTime() > end) {
         break;

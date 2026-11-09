@@ -91,6 +91,50 @@ describe("projectRenewals", () => {
     ]);
   });
 
+  it("keeps projecting from a renewal date stored many years ago", () => {
+    const old = [
+      subscription({ id: "w", vendorNormalized: "Weekly", billingCycle: BillingCycle.WEEKLY, nextRenewalDate: day("2010-01-06") }),
+      subscription({ id: "m", vendorNormalized: "Monthly", billingCycle: BillingCycle.MONTHLY, nextRenewalDate: day("2010-01-31") }),
+      subscription({ id: "a", vendorNormalized: "Annual", billingCycle: BillingCycle.ANNUAL, nextRenewalDate: day("2010-11-20") }),
+      subscription({ id: "c", vendorNormalized: "Custom", billingCycle: BillingCycle.CUSTOM, nextRenewalDate: day("2010-11-20") }),
+    ];
+    const result = projectRenewals(old, day("2026-11-01"), day("2026-11-30"));
+    expect(result.map((item) => [item.dateKey, item.vendor, item.projected])).toEqual([
+      ["2026-11-04", "Weekly", true],
+      ["2026-11-11", "Weekly", true],
+      ["2026-11-18", "Weekly", true],
+      ["2026-11-20", "Annual", true],
+      ["2026-11-25", "Weekly", true],
+      ["2026-11-30", "Monthly", true],
+    ]);
+  });
+
+  it("gives the same answer whether the range starts at the stored date or years later", () => {
+    for (const billingCycle of [BillingCycle.WEEKLY, BillingCycle.MONTHLY, BillingCycle.ANNUAL]) {
+      const item = subscription({ billingCycle, nextRenewalDate: day("2024-02-29") });
+      const whole = projectRenewals([item], day("2024-02-29"), day("2024-02-29"));
+      expect(whole.map((entry) => entry.dateKey)).toEqual(["2024-02-29"]);
+      // Compare 300-day ranges with a reference built one day at a time over the same six years.
+      const reference = new Set<string>();
+      for (let offset = 0; offset < 2200; offset += 1) {
+        const single = new Date(day("2024-02-29").getTime() + offset * 86_400_000);
+        for (const entry of projectRenewals([item], single, single)) {
+          reference.add(entry.dateKey);
+        }
+      }
+      const chunked = new Set<string>();
+      for (let offset = 0; offset < 2200; offset += 300) {
+        const from = new Date(day("2024-02-29").getTime() + offset * 86_400_000);
+        const to = new Date(day("2024-02-29").getTime() + Math.min(offset + 299, 2199) * 86_400_000);
+        for (const entry of projectRenewals([item], from, to)) {
+          chunked.add(entry.dateKey);
+        }
+      }
+      expect([...chunked].sort()).toEqual([...reference].sort());
+      expect(chunked.size).toBeGreaterThan(5);
+    }
+  });
+
   it("shows only the stored date for custom cycles", () => {
     const result = projectRenewals(
       [subscription({ billingCycle: BillingCycle.CUSTOM })],
