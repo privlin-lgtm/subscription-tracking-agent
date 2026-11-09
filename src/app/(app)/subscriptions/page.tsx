@@ -19,9 +19,17 @@ export default async function SubscriptionsPage() {
 
   return (
     <main className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Subscriptions</h1>
-        <p className="mt-1 text-sm text-slate-600">Discovered from Gmail or added manually. Price and renewal changes are kept in history.</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Subscriptions</h1>
+          <p className="mt-1 text-sm text-slate-600">Discovered from Gmail or added manually. Price and renewal changes are kept in history.</p>
+        </div>
+        <a
+          className="rounded-lg border bg-white px-3 py-2 text-sm font-medium text-ink-800 hover:bg-slate-50"
+          href="/api/export/subscriptions.csv"
+        >
+          Export subscriptions (CSV)
+        </a>
       </div>
       <AddSubscriptionForm />
       {renewals.length > 0 ? (

@@ -15,6 +15,12 @@ import type {
 } from "@/domain/repositories";
 import { summarizeSpend, type SpendSummary } from "@/application/reporting/spend-summary.service";
 import { toBillingCycle } from "@/application/subscriptions/vendor-normalization.service";
+import {
+  addUtcDays,
+  projectRenewals,
+  utcDay,
+  type RenewalOccurrence,
+} from "@/application/subscriptions/renewal-calendar";
 
 export type ManualSubscriptionInput = {
   vendor?: string;
@@ -73,6 +79,23 @@ export class SubscriptionService {
     const to = new Date(from);
     to.setDate(to.getDate() + days);
     return this.subscriptions.listDueRenewals(userId, from, to);
+  }
+
+  /**
+   * Renewals of the user's ACTIVE subscriptions between two days (inclusive), including later
+   * dates projected from each billing cycle. Used by the calendar page and the .ics export.
+   */
+  async listRenewalOccurrences(userId: string, from: Date, to: Date): Promise<RenewalOccurrence[]> {
+    const start = utcDay(from);
+    const end = utcDay(to);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end.getTime() < start.getTime()) {
+      throw new ValidationError("Renewal range is not valid");
+    }
+    if (end.getTime() > addUtcDays(start, 366).getTime()) {
+      throw new ValidationError("Renewal range must be 366 days or less");
+    }
+    const items = await this.subscriptions.listByUser(userId, SubscriptionStatus.ACTIVE);
+    return projectRenewals(items, start, end);
   }
 
   listAudit(userId: string, limit = 50): Promise<AuditRecord[]> {

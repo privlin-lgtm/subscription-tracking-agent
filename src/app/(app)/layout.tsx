@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/subscriptions", label: "Subscriptions" },
+  { href: "/calendar", label: "Calendar" },
   { href: "/reviews", label: "Review queue" },
   { href: "/notifications", label: "Notifications" },
   { href: "/audit", label: "Audit" },
@@ -21,11 +22,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
           <Link className="font-semibold text-ink-800" href="/dashboard">
             Subscription Tracker
           </Link>
-          <nav className="flex items-center gap-4 text-sm">
+          <nav className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             {NAV.map((item) => (
               <Link className="text-slate-600 hover:text-ink-900" href={item.href} key={item.href}>
                 {item.label}

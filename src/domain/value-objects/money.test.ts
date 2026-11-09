@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Money, majorToMinorUnits } from "@/domain/value-objects/money";
+import { Money, formatMinorAmount, majorToMinorUnits } from "@/domain/value-objects/money";
 
 describe("Money", () => {
   it("stores USD as integer cents", () => {
@@ -30,5 +30,12 @@ describe("Money", () => {
 
   it("uses 1 minor unit for JPY", () => {
     expect(majorToMinorUnits(1200, "JPY")).toBe(1200);
+  });
+
+  it("formats minor units with each currency's own decimals", () => {
+    expect(formatMinorAmount(1599, "USD")).toBe("15.99");
+    expect(formatMinorAmount(1000, "usd")).toBe("10.00");
+    expect(formatMinorAmount(1500, "JPY")).toBe("1500");
+    expect(formatMinorAmount(1234, "KWD")).toBe("1.234");
   });
 });
