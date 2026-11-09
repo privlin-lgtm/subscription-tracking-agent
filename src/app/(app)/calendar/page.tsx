@@ -10,12 +10,13 @@ import {
   shiftMonth,
   toDateKey,
   totalsByCurrency,
+  weekdayLabels,
   type RenewalOccurrence,
 } from "@/application/subscriptions/renewal-calendar";
 
 export const dynamic = "force-dynamic";
 
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const WEEKDAYS = weekdayLabels();
 const MONTH_TITLE = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
 const DAY_TITLE = new Intl.DateTimeFormat("en-GB", {
   weekday: "long",

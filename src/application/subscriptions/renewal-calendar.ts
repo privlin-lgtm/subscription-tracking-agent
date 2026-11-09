@@ -30,12 +30,25 @@ export type CalendarMonth = {
   year: number;
   /** 1-12 */
   month: number;
-  /** Monday-first weeks, padded with the neighbouring months' days. */
+  /** Weeks starting on `WEEK_STARTS_ON`, padded with the neighbouring months' days. */
   weeks: CalendarDay[][];
   /** First and last day shown on the grid, inclusive. */
   gridStart: Date;
   gridEnd: Date;
 };
+
+/**
+ * First column of the calendar, as a `Date#getUTCDay()` index (0 = Sunday, 1 = Monday).
+ * The one place to change, or to replace with a per-user setting later.
+ */
+export const WEEK_STARTS_ON: number = 0;
+
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** Column headings in display order for a given week start. */
+export function weekdayLabels(weekStartsOn: number = WEEK_STARTS_ON): string[] {
+  return WEEKDAY_LABELS.map((_label, index) => WEEKDAY_LABELS[(index + weekStartsOn) % 7]);
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Guards the projection loop; a weekly subscription across a full year is 53 occurrences. */
@@ -151,12 +164,16 @@ export function shiftMonth(year: number, month: number, delta: number): { year: 
   return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1 };
 }
 
-export function buildCalendarMonth(year: number, month: number): CalendarMonth {
+export function buildCalendarMonth(
+  year: number,
+  month: number,
+  weekStartsOn: number = WEEK_STARTS_ON,
+): CalendarMonth {
   const first = new Date(Date.UTC(year, month - 1, 1));
   const last = new Date(Date.UTC(year, month, 0));
-  // getUTCDay(): 0 = Sunday. Shift so Monday is the first column.
-  const leading = (first.getUTCDay() + 6) % 7;
-  const trailing = 6 - ((last.getUTCDay() + 6) % 7);
+  // Column of a day = how many days it sits after the week's first day.
+  const leading = (first.getUTCDay() - weekStartsOn + 7) % 7;
+  const trailing = 6 - ((last.getUTCDay() - weekStartsOn + 7) % 7);
   const gridStart = addUtcDays(first, -leading);
   const gridEnd = addUtcDays(last, trailing);
 

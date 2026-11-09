@@ -11,6 +11,8 @@ import {
   projectRenewals,
   shiftMonth,
   totalsByCurrency,
+  WEEK_STARTS_ON,
+  weekdayLabels,
 } from "@/application/subscriptions/renewal-calendar";
 import { ValidationError } from "@/domain/errors";
 
@@ -131,23 +133,62 @@ describe("projectRenewals", () => {
 });
 
 describe("calendar month helpers", () => {
-  it("builds Monday-first weeks padded with neighbouring days", () => {
+  it("starts the week on Sunday by default", () => {
+    expect(WEEK_STARTS_ON).toBe(0);
+    expect(weekdayLabels()).toEqual(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]);
+    expect(weekdayLabels(1)).toEqual(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+    expect(weekdayLabels(6)).toEqual(["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"]);
+  });
+
+  it("builds Sunday-first weeks padded with neighbouring days", () => {
     // 1 November 2026 is a Sunday; 30 November is a Monday.
     const calendar = buildCalendarMonth(2026, 11);
-    expect(calendar.weeks).toHaveLength(6);
+    expect(calendar.weeks).toHaveLength(5);
     expect(calendar.weeks.every((week) => week.length === 7)).toBe(true);
+    expect(calendar.weeks[0][0]).toEqual({ dateKey: "2026-11-01", day: 1, inMonth: true });
+    expect(calendar.weeks[4][1]).toEqual({ dateKey: "2026-11-30", day: 30, inMonth: true });
+    expect(calendar.weeks[4][6]).toEqual({ dateKey: "2026-12-05", day: 5, inMonth: false });
+    expect(calendar.gridStart.toISOString()).toBe("2026-11-01T00:00:00.000Z");
+    expect(calendar.gridEnd.toISOString()).toBe("2026-12-05T00:00:00.000Z");
+  });
+
+  it("pads the start of a Sunday-first month that begins midweek", () => {
+    // 1 December 2026 is a Tuesday; 31 December is a Thursday.
+    const calendar = buildCalendarMonth(2026, 12);
+    expect(calendar.weeks).toHaveLength(5);
+    expect(calendar.weeks[0].map((item) => item.day)).toEqual([29, 30, 1, 2, 3, 4, 5]);
+    expect(calendar.weeks[0].map((item) => item.inMonth)).toEqual([false, false, true, true, true, true, true]);
+    expect(calendar.weeks[4][6].dateKey).toBe("2027-01-02");
+  });
+
+  it("builds a four-week grid for a February that starts on the first weekday", () => {
+    // 1 February 2026 is a Sunday; 1 February 2027 is a Monday.
+    for (const calendar of [buildCalendarMonth(2026, 2), buildCalendarMonth(2027, 2, 1)]) {
+      expect(calendar.weeks).toHaveLength(4);
+      expect(calendar.weeks.flat().every((item) => item.inMonth)).toBe(true);
+    }
+  });
+
+  it("still supports a Monday-first grid through the week-start argument", () => {
+    const calendar = buildCalendarMonth(2026, 11, 1);
+    expect(calendar.weeks).toHaveLength(6);
     expect(calendar.weeks[0][0]).toEqual({ dateKey: "2026-10-26", day: 26, inMonth: false });
     expect(calendar.weeks[0][6]).toEqual({ dateKey: "2026-11-01", day: 1, inMonth: true });
     expect(calendar.weeks[5][0]).toEqual({ dateKey: "2026-11-30", day: 30, inMonth: true });
     expect(calendar.weeks[5][6].dateKey).toBe("2026-12-06");
-    expect(calendar.gridStart.toISOString()).toBe("2026-10-26T00:00:00.000Z");
-    expect(calendar.gridEnd.toISOString()).toBe("2026-12-06T00:00:00.000Z");
   });
 
-  it("builds a four-week grid for a February that starts on a Monday", () => {
-    const calendar = buildCalendarMonth(2027, 2);
-    expect(calendar.weeks).toHaveLength(4);
-    expect(calendar.weeks.flat().every((item) => item.inMonth)).toBe(true);
+  it("always shows every day of the month exactly once, for any week start", () => {
+    for (let weekStartsOn = 0; weekStartsOn < 7; weekStartsOn += 1) {
+      for (let month = 1; month <= 12; month += 1) {
+        const calendar = buildCalendarMonth(2028, month, weekStartsOn);
+        const days = calendar.weeks.flat().filter((item) => item.inMonth).map((item) => item.day);
+        const length = new Date(Date.UTC(2028, month, 0)).getUTCDate();
+        expect(days).toEqual(Array.from({ length }, (_value, index) => index + 1));
+        expect(calendar.weeks.every((week) => week.length === 7)).toBe(true);
+        expect(new Date(`${calendar.weeks[0][0].dateKey}T00:00:00Z`).getUTCDay()).toBe(weekStartsOn);
+      }
+    }
   });
 
   it("parses and formats the month parameter", () => {
