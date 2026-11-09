@@ -5,7 +5,9 @@ import type {
   AuditRecord,
   AuditRepository,
   CreateSubscriptionInput,
+  CurrencyUsageRepository,
   EmailSnapshotRepository,
+  ExchangeRateRepository,
   NotificationRepository,
   PriceChangeInput,
   PriceChangeRecord,
@@ -16,9 +18,11 @@ import type {
   SubscriptionRepository,
   SubscriptionUpdate,
   SubscriptionWrite,
+  UserPreferencesRepository,
   UserRepository,
   VendorAliasRepository,
 } from "@/domain/repositories";
+import type { FxRate } from "@/domain/ports";
 import { prisma } from "@/infrastructure/db/prisma";
 
 export class PrismaSubscriptionRepository implements SubscriptionRepository {
@@ -374,6 +378,76 @@ export class PrismaEmailSnapshotRepository implements EmailSnapshotRepository {
   async purgeExpired(now: Date) {
     const result = await prisma.emailSnapshot.deleteMany({ where: { expiresAt: { lte: now } } });
     return result.count;
+  }
+}
+
+export class PrismaExchangeRateRepository implements ExchangeRateRepository {
+  async saveRates(rates: FxRate[], fetchedAt: Date) {
+    if (rates.length === 0) {
+      return;
+    }
+    await prisma.$transaction(
+      rates.map((row) => {
+        const data = {
+          rate: row.rate,
+          // "YYYY-MM-DD" parses as UTC midnight, which is what a Postgres DATE column stores.
+          rateDate: new Date(row.rateDate),
+          source: row.source,
+          fetchedAt,
+        };
+        return prisma.exchangeRate.upsert({
+          where: { baseCurrency_quoteCurrency: { baseCurrency: row.base, quoteCurrency: row.quote } },
+          update: data,
+          create: { baseCurrency: row.base, quoteCurrency: row.quote, ...data },
+        });
+      }),
+    );
+  }
+
+  async listByBase(base: string): Promise<FxRate[]> {
+    const rows = await prisma.exchangeRate.findMany({ where: { baseCurrency: base } });
+    return rows.map((row) => ({
+      base: row.baseCurrency,
+      quote: row.quoteCurrency,
+      rate: row.rate,
+      rateDate: row.rateDate.toISOString().slice(0, 10),
+      source: row.source,
+    }));
+  }
+}
+
+export class PrismaCurrencyUsageRepository implements CurrencyUsageRepository {
+  async listCurrenciesInUse() {
+    const [subscriptions, users] = await Promise.all([
+      prisma.subscription.findMany({
+        where: { status: { in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.INACTIVE] } },
+        distinct: ["priceCurrency"],
+        select: { priceCurrency: true },
+      }),
+      prisma.user.findMany({
+        where: { displayCurrency: { not: null } },
+        distinct: ["displayCurrency"],
+        select: { displayCurrency: true },
+      }),
+    ]);
+    const codes = new Set<string>(subscriptions.map((row) => row.priceCurrency));
+    for (const row of users) {
+      if (row.displayCurrency) {
+        codes.add(row.displayCurrency);
+      }
+    }
+    return [...codes].sort();
+  }
+}
+
+export class PrismaUserPreferencesRepository implements UserPreferencesRepository {
+  async getDisplayCurrency(userId: string) {
+    const row = await prisma.user.findUnique({ where: { id: userId }, select: { displayCurrency: true } });
+    return row?.displayCurrency ?? null;
+  }
+
+  async setDisplayCurrency(userId: string, currency: string) {
+    await prisma.user.update({ where: { id: userId }, data: { displayCurrency: currency } });
   }
 }
 

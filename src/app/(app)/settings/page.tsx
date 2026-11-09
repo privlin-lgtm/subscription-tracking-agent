@@ -3,6 +3,7 @@ import { auth, signOut } from "@/infrastructure/auth/auth";
 import { app } from "@/infrastructure/composition";
 import { GmailActions } from "./gmail-actions";
 import { DangerZone } from "./danger-zone";
+import { DisplayCurrencyForm } from "./display-currency-form";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,10 @@ export default async function SettingsPage({
   if (!session?.user?.id) {
     redirect("/login");
   }
-  const user = await app.users.findById(session.user.id);
+  const [user, displayCurrency] = await Promise.all([
+    app.users.findById(session.user.id),
+    app.displayCurrency.get(session.user.id),
+  ]);
   const params = await searchParams;
   const userId = session.user.id;
 
@@ -40,6 +44,14 @@ export default async function SettingsPage({
         {params.gmail === "connected" ? <p className="mt-2 text-sm text-green-700">Gmail connected.</p> : null}
         {params.gmail === "denied" ? <p className="mt-2 text-sm text-red-700">Gmail authorization was denied.</p> : null}
         <GmailActions connected={Boolean(user?.gmailConnected)} />
+      </section>
+      <section className="rounded-xl border bg-white p-4">
+        <h2 className="font-medium">Display currency</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          When your subscriptions use more than one currency, the dashboard adds an approximate combined total in
+          this currency, using daily reference rates. Your subscriptions keep their original prices.
+        </p>
+        <DisplayCurrencyForm current={displayCurrency} />
       </section>
       <section className="rounded-xl border bg-white p-4">
         <h2 className="font-medium">Account</h2>

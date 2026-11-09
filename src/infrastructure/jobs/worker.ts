@@ -55,6 +55,19 @@ async function run(): Promise<void> {
 
   cron.schedule("0 4 * * *", () => runJob("audit log purge", () => app.alertJobs.purgeOldAuditLogs()));
 
+  // Once a day, plus once at startup so a fresh install has rates without waiting a day.
+  // Frankfurter publishes daily reference rates, so more often than this gains nothing.
+  const refreshFxRates = () =>
+    runJob("fx rate refresh", async () => {
+      const result = await app.fxRateJob.run();
+      console.log(
+        `fx rate refresh: stored ${result.stored}/${result.requested.length} rates against ${result.base}` +
+          (result.missing.length > 0 ? ` (no rate for: ${result.missing.join(", ")})` : ""),
+      );
+    });
+  cron.schedule("30 5 * * *", refreshFxRates);
+  void refreshFxRates();
+
   cron.schedule("*/15 * * * *", () =>
     runJob("gmail sync", async () => {
       const userIds = await app.users.listConnectedUserIds();
