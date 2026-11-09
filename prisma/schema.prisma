@@ -66,6 +66,7 @@ model User {
   gmailHistoryId      String?
   gmailConnected      Boolean   @default(false)
   gmailDisconnectedAt DateTime?
+  displayCurrency     String? // ISO 4217; null = the DEFAULT_DISPLAY_CURRENCY config default
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @default(now()) @updatedAt
 
@@ -216,4 +217,18 @@ model VendorAlias {
   canonicalName String
 
   @@index([canonicalName])
+}
+
+// Latest stored FX rate per pair, written by the daily worker job (never during a request).
+// `rate` means: 1 unit of baseCurrency = `rate` units of quoteCurrency, as published for rateDate.
+model ExchangeRate {
+  id            String   @id @default(cuid())
+  baseCurrency  String // ISO 4217
+  quoteCurrency String // ISO 4217
+  rate          Float
+  rateDate      DateTime @db.Date
+  source        String
+  fetchedAt     DateTime @default(now())
+
+  @@unique([baseCurrency, quoteCurrency])
 }

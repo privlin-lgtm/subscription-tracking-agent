@@ -46,7 +46,7 @@ npm test
 npm run dev
 ```
 
-Optional worker (renewal reminders, inactivity scan, snapshot purge, periodic Gmail sync):
+Optional worker (renewal reminders, inactivity scan, snapshot purge, periodic Gmail sync, daily exchange rates). Without it, run `npm run fx:refresh` to fetch exchange rates by hand:
 
 ```bash
 npm run worker
@@ -64,7 +64,7 @@ upload source maps on build (Settings > Auth Tokens, scope `project:releases`).
 ## Phase 3 decisions
 
 - **Pending review workflow**: low-confidence items become `PENDING_REVIEW` subscriptions. Users confirm or dismiss them from `/reviews` (`POST /api/reviews/:id/confirm|dismiss`). Confirm may include edits. Dismiss is terminal (`DISMISSED`).
-- **Mixed-currency reporting**: spend totals are grouped by ISO 4217 code and never summed across currencies. The dashboard and `GET /api/reports/spend` return `MIXED_CURRENCY_NO_FX` when more than one currency is present.
+- **Mixed-currency reporting**: spend totals are grouped by ISO 4217 code and native amounts are never summed across currencies. When more than one currency is present, the dashboard and `GET /api/reports/spend` add an approximate total in the user's display currency (default ILS, changeable in Settings), marked "≈" with the rate date. Rates come from [Frankfurter](https://frankfurter.dev/) (free, no key), fetched once a day by the worker and stored; only a currency code is ever sent. If a rate is missing or more than `FX_MAX_RATE_AGE_DAYS` old, no combined total is shown and the response keeps `MIXED_CURRENCY_NO_FX`. See [docs/technical-design.md](docs/technical-design.md), "Currency conversion for the spend total".
 - **Email snapshots**: truncated source text is stored with `expiresAt` (default 30 days) and purged by the worker. Full-account deletion cascades via Prisma.
 - **Gmail/LLM**: Gmail OAuth is read-only (`gmail.readonly`) with PKCE, HMAC-signed state, AES-GCM refresh-token storage, incremental history sync, and exponential backoff on 429s.
 

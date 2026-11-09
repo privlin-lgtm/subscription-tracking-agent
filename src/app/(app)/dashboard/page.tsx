@@ -6,6 +6,10 @@ import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
+function sourceLabel(source: string): string {
+  return source === "frankfurter" ? "Frankfurter" : source;
+}
+
 export default async function DashboardPage() {
   const session = await auth();
   if (!session?.user?.id) {
@@ -34,9 +38,26 @@ export default async function DashboardPage() {
           <p className="text-sm text-slate-500">Spend summary</p>
           {summary.mixed ? (
             <div className="mt-2 space-y-1">
-              <p className="text-sm font-medium text-amber-700">Mixed currencies — totals are not combined.</p>
+              {summary.converted ? (
+                <>
+                  <p className="text-3xl font-semibold">
+                    ≈ {minorToMajorUnits(summary.converted.totalCents, summary.converted.currency).toFixed(2)}{" "}
+                    {summary.converted.currency}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Approximate total at {sourceLabel(summary.converted.source)} rates from{" "}
+                    {summary.converted.rateDate}. By currency:
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm font-medium text-amber-700">
+                  {summary.fxUnavailable
+                    ? "Mixed currencies — no current exchange rate, so totals are not combined."
+                    : "Mixed currencies — totals are not combined."}
+                </p>
+              )}
               {summary.byCurrency.map((row) => (
-                <p key={row.currency} className="text-lg font-semibold">
+                <p key={row.currency} className={summary.converted ? "text-sm font-medium" : "text-lg font-semibold"}>
                   {minorToMajorUnits(row.totalCents, row.currency).toFixed(2)} {row.currency}
                   <span className="ml-2 text-sm font-normal text-slate-500">({row.subscriptionCount})</span>
                 </p>

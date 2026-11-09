@@ -62,3 +62,25 @@ export interface JobLock {
 }
 
 export type Actor = "system" | "user";
+
+/**
+ * One published FX rate: 1 unit of `base` = `rate` units of `quote`, as of `rateDate`
+ * (a calendar day, "YYYY-MM-DD", exactly as the provider published it).
+ */
+export type FxRate = {
+  base: string;
+  quote: string;
+  rate: number;
+  rateDate: string;
+  source: string;
+};
+
+export interface FxRateProvider {
+  /** Short stable identifier stored with each rate and shown next to converted totals. */
+  readonly source: string;
+  /**
+   * Latest rates for `base` against each of `quotes`. Receives currency codes only — never
+   * user data. May return fewer rows than requested (a currency the provider doesn't cover).
+   */
+  fetchLatest(base: string, quotes: string[]): Promise<FxRate[]>;
+}

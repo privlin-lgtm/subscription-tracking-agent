@@ -2,9 +2,11 @@ import { EventType, ReviewDecisionType, SubscriptionStatus } from "@prisma/clien
 import { NotFoundError, ValidationError } from "@/domain/errors";
 import { minorToMajorUnits, Money } from "@/domain/value-objects/money";
 import { normalizeVendorKey, titleCaseVendor } from "@/domain/value-objects/vendor-name";
+import type { Clock } from "@/domain/ports";
 import type {
   AuditRecord,
   AuditRepository,
+  ExchangeRateRepository,
   PriceChangeRecord,
   ReviewRepository,
   SubscriptionEventInput,
@@ -30,10 +32,20 @@ export type SubscriptionDetail = {
   priceChanges: PriceChangeRecord[];
 };
 
+/** What the spend summary needs to add a converted total. All of it is stored data. */
+export type SpendFxDeps = {
+  rates: ExchangeRateRepository;
+  displayCurrencyFor(userId: string): Promise<string>;
+  clock: Clock;
+  baseCurrency: string;
+  maxRateAgeDays: number;
+};
+
 export class SubscriptionService {
   constructor(
     private readonly subscriptions: SubscriptionRepository,
     private readonly audit: AuditRepository,
+    private readonly fx?: SpendFxDeps,
   ) {}
 
   list(userId: string): Promise<SubscriptionRecord[]> {
@@ -62,7 +74,22 @@ export class SubscriptionService {
       SubscriptionStatus.ACTIVE,
       SubscriptionStatus.INACTIVE,
     ]);
-    return summarizeSpend(items);
+    const summary = summarizeSpend(items);
+    if (!summary.mixed || !this.fx) {
+      return summary;
+    }
+    // Stored rates only: this never calls the FX provider during a request.
+    const [displayCurrency, rates] = await Promise.all([
+      this.fx.displayCurrencyFor(userId),
+      this.fx.rates.listByBase(this.fx.baseCurrency),
+    ]);
+    return summarizeSpend(items, {
+      displayCurrency,
+      baseCurrency: this.fx.baseCurrency,
+      rates,
+      now: this.fx.clock.now(),
+      maxRateAgeDays: this.fx.maxRateAgeDays,
+    });
   }
 
   listUpcomingRenewals(userId: string, days = 30): Promise<SubscriptionRecord[]> {

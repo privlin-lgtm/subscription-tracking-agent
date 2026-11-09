@@ -17,7 +17,8 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
-    "worker": "tsx src/infrastructure/jobs/worker.ts"
+    "worker": "tsx src/infrastructure/jobs/worker.ts",
+    "fx:refresh": "tsx src/infrastructure/jobs/run-fx-refresh.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",

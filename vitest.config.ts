@@ -23,6 +23,7 @@ export default defineConfig({
         "src/test/**",
         "src/application/subscriptions/pipeline.fixtures.ts",
         "src/application/subscriptions/in-memory-subscriptions.ts",
+        "src/application/fx/in-memory-fx.ts",
         "src/domain/ports.ts",
         "src/domain/repositories.ts",
         "src/shared/config.ts",

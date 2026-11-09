@@ -299,5 +299,46 @@ These map directly to review findings from Phase 1 that this technical design re
 | #4 Vendor merge conflict resolution | Fuzzy-match threshold routes to `pending_review` instead of auto-merge |
 | #9 Confidence score calibration | Deterministic signal adjustments layered on top of LLM-reported confidence |
 | #5 No resolution workflow for `pending_review` | **Resolved in Phase 3** — review queue UI (`/reviews`) plus `GET /api/reviews`, `POST /api/reviews/:id/confirm`, and `POST /api/reviews/:id/dismiss`. Confirm can include field edits; dismiss is a terminal `DISMISSED` status with an append-only `ReviewDecision`. |
-| #6 Mixed-currency reporting guard | **Resolved in Phase 3** — `summarizeSpend` and `GET /api/reports/spend` never add amounts across ISO 4217 codes. Mixed-currency users get per-currency totals and `MIXED_CURRENCY_NO_FX`. |
+| #6 Mixed-currency reporting guard | **Resolved in Phase 3, extended 2026-11 with FX conversion** — native amounts are still never added across ISO 4217 codes: `summarizeSpend` and `GET /api/reports/spend` always return per-currency totals in `byCurrency`. When stored exchange rates allow it, a mixed-currency summary also carries an approximate `converted` total in the user's display currency; otherwise it keeps `MIXED_CURRENCY_NO_FX`. See "Currency conversion for the spend total" below. |
 | #7 Retention/deletion policy | **Partially addressed in Phase 3** — `EmailSnapshot.expiresAt` plus a daily purge job, and cascading deletes on user removal. A documented GDPR TTL/right-to-erasure policy is still required before Phase 8. |
+
+## Currency conversion for the spend total (review finding #6)
+
+**Goal.** A user whose subscriptions are billed in several currencies sees one approximate total in their display currency, next to the unchanged per-currency breakdown, labelled with the date of the rates used. Stored subscription amounts are never changed.
+
+**Source.** [Frankfurter](https://frankfurter.dev/) (`FX_API_BASE_URL`, default `https://api.frankfurter.dev`): free, no API key, daily central-bank reference rates, open source and self-hostable. It sits behind the `FxRateProvider` port (`src/domain/ports.ts`); `FrankfurterRateProvider` and a `FakeFxRateProvider` for tests live in `src/infrastructure/fx/`. The request is `GET /v2/rates?base=<base>`, and the only thing sent is the base currency code. No user data, amounts or vendors leave the app. The provider filters the response to the currencies wanted rather than sending a `quotes` list, because Frankfurter rejects the whole request when any one requested code is unknown to it.
+
+**Daily job.** `FxRateJob` (`src/application/fx/fx-rate.job.ts`) runs in the worker at 05:30 and once at worker start (`npm run fx:refresh` runs it by hand). It collects the currencies on active/inactive subscriptions, every user's display currency and the fixed list of display options, fetches the latest rates against the base currency (`DEFAULT_DISPLAY_CURRENCY`), validates each row (requested pair, positive finite rate, real date) and upserts one row per pair into `ExchangeRate`. If the provider is down, the previous rows stay untouched.
+
+**Requests never call the provider.** `SubscriptionService.spendSummary` reads only the stored `ExchangeRate` rows. A provider outage cannot slow down or break the dashboard or the API.
+
+**Display currency.** A per-user setting (`User.displayCurrency`, set on the settings page via `PATCH /api/account`) with a config default (`DEFAULT_DISPLAY_CURRENCY`, default `ILS`) used while the column is null. Choices are limited to `DISPLAY_CURRENCY_OPTIONS` (`src/shared/display-currencies.ts`); the job always keeps rates for all of them, so a change takes effect at once.
+
+**Response shape** (`GET /api/reports/spend`, mixed-currency case):
+
+```json
+{
+  "summary": {
+    "mixed": true,
+    "byCurrency": [
+      { "currency": "ILS", "totalCents": 5990, "subscriptionCount": 1 },
+      { "currency": "USD", "totalCents": 1000, "subscriptionCount": 1 }
+    ],
+    "converted": {
+      "currency": "ILS",
+      "totalCents": 9990,
+      "rateDate": "2026-11-09",
+      "source": "frankfurter",
+      "approximate": true
+    }
+  }
+}
+```
+
+`byCurrency` is exactly what it was before. The single-currency shape (`mixed: false`) is unchanged and is never converted.
+
+**Never silently wrong.** Conversion is all-or-nothing. If any currency involved has no stored rate (`fxUnavailable: "RATE_MISSING"`), or its rate is older than `FX_MAX_RATE_AGE_DAYS` (default 7, which covers weekends and holidays; `fxUnavailable: "RATE_STALE"`), `converted` is omitted and the summary keeps `warning: "MIXED_CURRENCY_NO_FX"`, exactly as before this feature. `rateDate` is the oldest publication date among the rates used, so the label never overstates freshness.
+
+**Rounding.** Amounts are integer minor units end to end. Each currency's subtotal is converted on its own and rounded half-up to the display currency's minor unit (respecting currencies such as JPY that have none), then the rounded subtotals are added. A currency that is not the base is converted through the base (cross rate). The dashboard marks the result with "≈" and the rate date.
+
+**Out of scope.** Historical rates per charge date, the Bank of Israel as a source, converting single-currency summaries, and normalising different billing cycles (the total adds each subscription's price per its own cycle, as `byCurrency` always has).

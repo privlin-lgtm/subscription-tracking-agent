@@ -8,6 +8,7 @@ import type {
   SubscriptionStatus,
 } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
+import type { FxRate } from "@/domain/ports";
 
 export type SubscriptionRecord = {
   id: string;
@@ -225,4 +226,22 @@ export interface EmailSnapshotRepository {
     bodyText: string;
   } | null>;
   purgeExpired(now: Date): Promise<number>;
+}
+
+export interface ExchangeRateRepository {
+  /** Upserts the latest rate per (base, quote) pair. */
+  saveRates(rates: FxRate[], fetchedAt: Date): Promise<void>;
+  /** Every stored rate quoted against `base`. */
+  listByBase(base: string): Promise<FxRate[]>;
+}
+
+export interface CurrencyUsageRepository {
+  /** Distinct ISO 4217 codes on reportable subscriptions plus every user's chosen display currency. */
+  listCurrenciesInUse(): Promise<string[]>;
+}
+
+export interface UserPreferencesRepository {
+  /** The user's chosen display currency, or null when they are on the config default. */
+  getDisplayCurrency(userId: string): Promise<string | null>;
+  setDisplayCurrency(userId: string, currency: string): Promise<void>;
 }

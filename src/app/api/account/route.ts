@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { jsonError, requireUserId } from "@/infrastructure/http/api";
 import { app } from "@/infrastructure/composition";
 
@@ -17,6 +18,23 @@ export async function DELETE() {
   try {
     await app.users.deleteAccount(userId);
     return NextResponse.json({ ok: true });
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
+const preferencesSchema = z.object({ displayCurrency: z.string().length(3) });
+
+/** Updates the signed-in user's preferences (currently just the display currency). */
+export async function PATCH(request: Request) {
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
+  }
+  try {
+    const input = preferencesSchema.parse(await request.json());
+    const displayCurrency = await app.displayCurrency.set(userId, input.displayCurrency);
+    return NextResponse.json({ displayCurrency });
   } catch (error) {
     return jsonError(error);
   }

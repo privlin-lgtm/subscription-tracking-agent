@@ -1,3 +1,10 @@
+import { isIso4217 } from "@/shared/iso-4217";
+
+function currencyEnv(name: string, fallback: string): string {
+  const code = (process.env[name] ?? "").trim().toUpperCase();
+  return isIso4217(code) ? code : fallback;
+}
+
 function numberEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) {
@@ -31,4 +38,14 @@ export const appConfig = {
   gmailMaxLookbackMessages: numberEnv("GMAIL_MAX_LOOKBACK_MESSAGES", 500),
   gmailMaxRetries: numberEnv("GMAIL_MAX_RETRIES", 5),
   gmailSyncConcurrency: numberEnv("GMAIL_SYNC_CONCURRENCY", 10),
+  fx: {
+    // Frankfurter (https://frankfurter.dev): free, keyless, daily central-bank rates. The
+    // base URL is configurable because the service is open source and self-hostable.
+    apiBaseUrl: process.env.FX_API_BASE_URL ?? "https://api.frankfurter.dev",
+    // Currency converted spend totals are shown in when the user has not picked one. Also
+    // the base currency the daily job stores rates against.
+    defaultDisplayCurrency: currencyEnv("DEFAULT_DISPLAY_CURRENCY", "ILS"),
+    // A stored rate older than this many days is treated as missing: no converted total.
+    maxRateAgeDays: numberEnv("FX_MAX_RATE_AGE_DAYS", 7),
+  },
 };
