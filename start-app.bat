@@ -41,6 +41,8 @@ if errorlevel 1 (
     exit /b 1
 )
 call npm run db:seed >nul 2>&1
+rem Fetch today's exchange rates for the combined spend total. Needs internet; safe to fail.
+call npm run fx:refresh >nul 2>&1
 
 echo [4/4] Starting the app...
 start "Subscription Tracker - Dev Server (close this window to stop the app)" cmd /k npm run dev

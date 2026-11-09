@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/infrastructure/auth/auth";
 import { app } from "@/infrastructure/composition";
-import { minorToMajorUnits } from "@/domain/value-objects/money";
+import { formatMinorAmount, minorToMajorUnits } from "@/domain/value-objects/money";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +41,7 @@ export default async function DashboardPage() {
               {summary.converted ? (
                 <>
                   <p className="text-3xl font-semibold">
-                    ≈ {minorToMajorUnits(summary.converted.totalCents, summary.converted.currency).toFixed(2)}{" "}
+                    ≈ {formatMinorAmount(summary.converted.totalCents, summary.converted.currency)}{" "}
                     {summary.converted.currency}
                   </p>
                   <p className="text-xs text-slate-500">
