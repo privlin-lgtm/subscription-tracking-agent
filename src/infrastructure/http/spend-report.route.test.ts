@@ -16,13 +16,15 @@ vi.mock("@/infrastructure/composition", () => ({ app: state.app }));
 
 const { GET } = await import("@/app/api/reports/spend/route");
 
-async function seed(rates: FxRate[], currencies: Array<[string, number]>, displayCurrency?: string) {
+type Cycle = "WEEKLY" | "MONTHLY" | "ANNUAL" | "CUSTOM";
+
+async function seed(rates: FxRate[], currencies: Array<[string, number, Cycle?]>, displayCurrency?: string) {
   const { subscriptions, audit } = createInMemoryPersistence();
   const preferences = new InMemoryUserPreferences();
   if (displayCurrency) {
     await preferences.setDisplayCurrency("user_a", displayCurrency);
   }
-  for (const [priceCurrency, priceAmountCents] of currencies) {
+  for (const [priceCurrency, priceAmountCents, billingCycle = "MONTHLY"] of currencies) {
     await subscriptions.create({
       userId: "user_a",
       vendorNormalized: `Vendor ${priceCurrency}`,
@@ -30,7 +32,7 @@ async function seed(rates: FxRate[], currencies: Array<[string, number]>, displa
       status: SubscriptionStatus.ACTIVE,
       priceAmountCents,
       priceCurrency,
-      billingCycle: "MONTHLY",
+      billingCycle,
       nextRenewalDate: null,
       lastSeenEmailId: null,
       confidenceScore: 1,
@@ -66,6 +68,8 @@ describe("GET /api/reports/spend", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       summary: {
+        period: "monthly",
+        excludedCount: 0,
         mixed: true,
         byCurrency: [
           { currency: "ILS", totalCents: 5990, subscriptionCount: 1 },
@@ -93,6 +97,8 @@ describe("GET /api/reports/spend", () => {
     await seed([usdRate("2026-10-01")], [["ILS", 5990], ["USD", 1000]]);
     expect(await (await GET()).json()).toEqual({
       summary: {
+        period: "monthly",
+        excludedCount: 0,
         mixed: true,
         warning: "MIXED_CURRENCY_NO_FX",
         fxUnavailable: "RATE_STALE",
@@ -115,7 +121,60 @@ describe("GET /api/reports/spend", () => {
   it("keeps the single-currency shape unchanged", async () => {
     await seed([usdRate("2026-11-09")], [["USD", 1000], ["USD", 549]]);
     expect(await (await GET()).json()).toEqual({
-      summary: { mixed: false, currency: "USD", totalCents: 1549, subscriptionCount: 2 },
+      summary: {
+        period: "monthly",
+        excludedCount: 0,
+        mixed: false,
+        currency: "USD",
+        totalCents: 1549,
+        subscriptionCount: 2,
+      },
+    });
+  });
+
+  it("returns monthly figures: annual and weekly plans are converted, custom ones are left out and counted", async () => {
+    await seed(
+      [usdRate("2026-11-09")],
+      [
+        ["ILS", 5000, "MONTHLY"],
+        ["ILS", 12000, "ANNUAL"], // 10.00 a month
+        ["ILS", 300, "WEEKLY"], // 13.00 a month
+        ["USD", 12000, "ANNUAL"], // 10.00 USD a month = 40.00 ILS
+        ["USD", 99900, "CUSTOM"], // left out
+      ],
+    );
+
+    expect(await (await GET()).json()).toEqual({
+      summary: {
+        period: "monthly",
+        excludedCount: 1,
+        mixed: true,
+        byCurrency: [
+          { currency: "ILS", totalCents: 7300, subscriptionCount: 3 },
+          { currency: "USD", totalCents: 1000, subscriptionCount: 1 },
+        ],
+        converted: {
+          currency: "ILS",
+          totalCents: 11300,
+          rateDate: "2026-11-09",
+          source: "frankfurter",
+          approximate: true,
+        },
+      },
+    });
+  });
+
+  it("reports excludedCount on the single-currency shape", async () => {
+    await seed([], [["USD", 1000], ["USD", 2400, "ANNUAL"], ["USD", 700, "CUSTOM"]]);
+    expect(await (await GET()).json()).toEqual({
+      summary: {
+        period: "monthly",
+        excludedCount: 1,
+        mixed: false,
+        currency: "USD",
+        totalCents: 1200,
+        subscriptionCount: 2,
+      },
     });
   });
 });

@@ -36,11 +36,29 @@ describe("vendor normalization", () => {
     }
   });
 
-  it("title-cases an unknown vendor instead of inventing an alias", async () => {
+  it("keeps an unknown vendor's own casing instead of inventing an alias", async () => {
     await expect(service.normalize("Zebra Fitness Club")).resolves.toEqual({
       kind: "unmatched",
       canonical: "Zebra Fitness Club",
     });
+    await expect(service.normalize("XPlace")).resolves.toEqual({ kind: "unmatched", canonical: "XPlace" });
+    await expect(service.normalize("  WalkFit  Pro ")).resolves.toEqual({ kind: "unmatched", canonical: "WalkFit Pro" });
+  });
+
+  it("title-cases an unknown vendor written all in upper or all in lower case", async () => {
+    await expect(service.normalize("ZEBRA FITNESS.COM")).resolves.toEqual({
+      kind: "unmatched",
+      canonical: "Zebra Fitness Com",
+    });
+    await expect(service.normalize("zebra fitness club")).resolves.toEqual({
+      kind: "unmatched",
+      canonical: "Zebra Fitness Club",
+    });
+  });
+
+  it("keeps the catalogue name for a catalogue match, however the email wrote it", async () => {
+    await expect(service.normalize("NETFLIX")).resolves.toEqual({ kind: "exact", canonical: "Netflix" });
+    await expect(service.normalize("NetFlix")).resolves.toEqual({ kind: "exact", canonical: "Netflix" });
   });
 });
 

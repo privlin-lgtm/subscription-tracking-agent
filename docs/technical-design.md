@@ -299,8 +299,50 @@ These map directly to review findings from Phase 1 that this technical design re
 | #4 Vendor merge conflict resolution | Fuzzy-match threshold routes to `pending_review` instead of auto-merge |
 | #9 Confidence score calibration | Deterministic signal adjustments layered on top of LLM-reported confidence |
 | #5 No resolution workflow for `pending_review` | **Resolved in Phase 3** — review queue UI (`/reviews`) plus `GET /api/reviews`, `POST /api/reviews/:id/confirm`, and `POST /api/reviews/:id/dismiss`. Confirm can include field edits; dismiss is a terminal `DISMISSED` status with an append-only `ReviewDecision`. |
-| #6 Mixed-currency reporting guard | **Resolved in Phase 3, extended 2026-11 with FX conversion** — native amounts are still never added across ISO 4217 codes: `summarizeSpend` and `GET /api/reports/spend` always return per-currency totals in `byCurrency`. When stored exchange rates allow it, a mixed-currency summary also carries an approximate `converted` total in the user's display currency; otherwise it keeps `MIXED_CURRENCY_NO_FX`. See "Currency conversion for the spend total" below. |
+| #6 Mixed-currency reporting guard | **Resolved in Phase 3, extended 2026-11 with FX conversion** — native amounts are still never added across ISO 4217 codes: `summarizeSpend` and `GET /api/reports/spend` always return per-currency totals in `byCurrency`. When stored exchange rates allow it, a mixed-currency summary also carries an approximate `converted` total in the user's display currency; otherwise it keeps `MIXED_CURRENCY_NO_FX`. Since 2026-11-10 every total is a **monthly equivalent** (`period: "monthly"`): annual and weekly plans are converted to a monthly cost first, and custom/unknown cycles are left out and counted in `excludedCount`. See "Monthly spend total" and "Currency conversion for the spend total" below. |
+
+## Monthly spend total
+
+**Goal.** The Dashboard and `GET /api/reports/spend` show what the user pays per month. Before 2026-11-10 the total added each price as stored, so an annual plan counted at its full yearly price.
+
+**Rule** (`monthlyEquivalentCents` in `src/application/reporting/spend-summary.service.ts`), applied to each ACTIVE or INACTIVE subscription before anything is added:
+
+| `billingCycle` | Monthly equivalent |
+|---|---|
+| `MONTHLY` | the price as stored |
+| `ANNUAL` | price ÷ 12 |
+| `WEEKLY` | price × 52 ÷ 12 |
+| `CUSTOM` (also how the API's `unknown` is stored) | none: left out of every total and counted in `excludedCount` |
+
+A cycle is never guessed. A value the code does not recognise is treated like `CUSTOM`.
+
+**Rounding.** Each subscription's monthly equivalent is rounded **half-up to a whole minor unit on its own, before adding** (integer arithmetic, no floating point). The total is therefore the sum of per-item figures that can be checked by hand; it can differ by a cent or two from dividing the summed annual prices once. Example: annual plans of 499.00, 36.00, 85.90 and 85.00 give 41.58 + 3.00 + 7.16 + 7.08 = 58.82 a month.
+
+**Response.** Both shapes of the summary carry `period: "monthly"` and `excludedCount`. The existing field names (`totalCents`, `subscriptionCount`, `byCurrency`, `converted`) are unchanged, but their amounts are now monthly, and `subscriptionCount` counts only the subscriptions included in the total. An excluded subscription does not count towards "mixed currency" either. When nothing can be counted the total is 0 in the currency of the user's first reportable subscription (USD if there is none).
+
+**Stored data is untouched.** Prices and billing cycles are stored as before. The Subscriptions list, Calendar, `.ics` and CSV keep showing each plan's own price per its own cycle.
+
+**Dashboard.** The spend card is titled "Spend per month", every amount says "per month", and when `excludedCount > 0` it says how many subscriptions were not included.
+
+**Not done.** A yearly view of the same total.
 | #7 Retention/deletion policy | **Partially addressed in Phase 3** — `EmailSnapshot.expiresAt` plus a daily purge job, and cascading deletes on user removal. A documented GDPR TTL/right-to-erasure policy is still required before Phase 8. |
+
+## Vendor name casing
+
+**Goal.** A vendor that is not in the catalogue shows the way it was written ("XPlace", "WalkFit", "Apple TV"). Before 2026-11-10 every such name was title-cased ("Xplace", "Walkfit", "Apple Tv").
+
+**Rule** (`vendorDisplayName` in `src/domain/value-objects/vendor-name.ts`), used for manual create/edit and for the unmatched path of `VendorNormalizationService`:
+
+1. Trim, collapse runs of whitespace to one space, drop a leading `http(s)://` and `www.`.
+2. A name with both upper- and lower-case letters is kept as written.
+3. A name with no cased letters, or with any non-ASCII letter (Hebrew, accents), is kept as written.
+4. Only a name written entirely in lower case or entirely in upper case is title-cased the old way ("netflix" → "Netflix", "NETFLIX.COM" → "Netflix Com"). Known limit: a bare acronym typed in capitals ("HBO") becomes "Hbo".
+
+Catalogue (alias table) matches still get the catalogue's name, and names edited in the review queue are stored as entered.
+
+**Duplicate matching ignores casing.** `matchSubscription` and `SubscriptionRepository.findActiveByVendor` compare `vendorMatchKey` (lower case, punctuation and spacing collapsed, non-Latin letters kept), not the stored spelling. The Prisma `findActiveByVendor` used to be an exact, case-sensitive column match; it now loads the user's open subscriptions and filters on the key, so "XPlace" in a new email matches a stored "Xplace".
+
+**Existing rows.** `npm run vendors:recase -- --dry-run` lists the stored names it would rewrite, and `-- --apply` rewrites them (`src/infrastructure/jobs/run-vendor-recase.ts`, logic in `src/application/subscriptions/vendor-recase.ts`). A row is changed only if its stored name is exactly what the old rule made from `vendorRaw` and is not a catalogue name, so catalogue names and review edits are never touched. Each change goes through `applyWrite`, leaving an `UPDATED` event and a `subscription.vendor_recase` audit entry (actor `system`). Running it twice changes nothing the second time.
 
 ## Currency conversion for the spend total (review finding #6)
 
@@ -319,6 +361,8 @@ These map directly to review findings from Phase 1 that this technical design re
 ```json
 {
   "summary": {
+    "period": "monthly",
+    "excludedCount": 0,
     "mixed": true,
     "byCurrency": [
       { "currency": "ILS", "totalCents": 5990, "subscriptionCount": 1 },
@@ -335,10 +379,10 @@ These map directly to review findings from Phase 1 that this technical design re
 }
 ```
 
-`byCurrency` is exactly what it was before. The single-currency shape (`mixed: false`) is unchanged and is never converted.
+`byCurrency` holds the per-currency monthly totals in native currency, and `converted` is built from those same monthly totals, so it is a monthly figure too. The single-currency shape (`mixed: false`) is never converted.
 
 **Never silently wrong.** Conversion is all-or-nothing. If any currency involved has no stored rate (`fxUnavailable: "RATE_MISSING"`), or its rate is older than `FX_MAX_RATE_AGE_DAYS` (default 7, which covers weekends and holidays; `fxUnavailable: "RATE_STALE"`), `converted` is omitted and the summary keeps `warning: "MIXED_CURRENCY_NO_FX"`, exactly as before this feature. `rateDate` is the oldest publication date among the rates used, so the label never overstates freshness.
 
 **Rounding.** Amounts are integer minor units end to end. Each currency's subtotal is converted on its own and rounded half-up to the display currency's minor unit (respecting currencies such as JPY that have none), then the rounded subtotals are added. A currency that is not the base is converted through the base (cross rate). The dashboard marks the result with "≈" and the rate date.
 
-**Out of scope.** Historical rates per charge date, the Bank of Israel as a source, converting single-currency summaries, and normalising different billing cycles (the total adds each subscription's price per its own cycle, as `byCurrency` always has).
+**Out of scope.** Historical rates per charge date, the Bank of Israel as a source, and converting single-currency summaries. (Normalising billing cycles was out of scope here and was added on 2026-11-10: see "Monthly spend total" above.)

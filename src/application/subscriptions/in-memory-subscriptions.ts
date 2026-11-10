@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { SubscriptionStatus } from "@prisma/client";
+import { vendorMatchKey } from "@/domain/value-objects/vendor-name";
 import type {
   AuditInput,
   AuditRecord,
@@ -44,9 +45,9 @@ export class InMemorySubscriptions implements SubscriptionRepository {
   }
 
   async findActiveByVendor(userId: string, vendorNormalized: string): Promise<SubscriptionRecord[]> {
+    const key = vendorMatchKey(vendorNormalized);
     return [...this.records.values()].filter(
-      (record) =>
-        record.userId === userId && record.vendorNormalized.toLowerCase() === vendorNormalized.toLowerCase(),
+      (record) => record.userId === userId && vendorMatchKey(record.vendorNormalized) === key,
     );
   }
 

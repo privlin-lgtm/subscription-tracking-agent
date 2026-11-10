@@ -35,7 +35,7 @@ export default async function DashboardPage() {
           </p>
         </article>
         <article className="rounded-xl border bg-white p-4">
-          <p className="text-sm text-slate-500">Spend summary</p>
+          <p className="text-sm text-slate-500">Spend per month</p>
           {summary.mixed ? (
             <div className="mt-2 space-y-1">
               {summary.converted ? (
@@ -43,31 +43,43 @@ export default async function DashboardPage() {
                   <p className="text-3xl font-semibold">
                     ≈ {formatMinorAmount(summary.converted.totalCents, summary.converted.currency)}{" "}
                     {summary.converted.currency}
+                    <span className="ml-2 text-sm font-normal text-slate-500">per month</span>
                   </p>
                   <p className="text-xs text-slate-500">
-                    Approximate total at {sourceLabel(summary.converted.source)} rates from{" "}
+                    Approximate monthly total at {sourceLabel(summary.converted.source)} rates from{" "}
                     {summary.converted.rateDate}. By currency:
                   </p>
                 </>
               ) : (
                 <p className="text-sm font-medium text-amber-700">
                   {summary.fxUnavailable
-                    ? "Mixed currencies — no current exchange rate, so totals are not combined."
-                    : "Mixed currencies — totals are not combined."}
+                    ? "Mixed currencies — no current exchange rate, so monthly totals are not combined."
+                    : "Mixed currencies — monthly totals are not combined."}
                 </p>
               )}
               {summary.byCurrency.map((row) => (
                 <p key={row.currency} className={summary.converted ? "text-sm font-medium" : "text-lg font-semibold"}>
                   {minorToMajorUnits(row.totalCents, row.currency).toFixed(2)} {row.currency}
-                  <span className="ml-2 text-sm font-normal text-slate-500">({row.subscriptionCount})</span>
+                  <span className="ml-2 text-sm font-normal text-slate-500">
+                    per month ({row.subscriptionCount})
+                  </span>
                 </p>
               ))}
             </div>
           ) : (
             <p className="mt-2 text-3xl font-semibold">
               {minorToMajorUnits(summary.totalCents, summary.currency).toFixed(2)} {summary.currency}
+              <span className="ml-2 text-sm font-normal text-slate-500">per month</span>
             </p>
           )}
+          <p className="mt-2 text-xs text-slate-500">Yearly and weekly plans are counted at their monthly cost.</p>
+          {summary.excludedCount > 0 ? (
+            <p className="mt-1 text-xs text-amber-700">
+              {summary.excludedCount === 1
+                ? "1 subscription with a custom or unknown billing cycle is not included."
+                : `${summary.excludedCount} subscriptions with a custom or unknown billing cycle are not included.`}
+            </p>
+          ) : null}
         </article>
         <article className="rounded-xl border bg-white p-4">
           <p className="text-sm text-slate-500">Needs review</p>

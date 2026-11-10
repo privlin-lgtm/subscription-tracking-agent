@@ -1,4 +1,5 @@
 import { Money } from "@/domain/value-objects/money";
+import { vendorMatchKey } from "@/domain/value-objects/vendor-name";
 import type { SubscriptionRecord } from "@/domain/repositories";
 
 export type MatchDecision =
@@ -14,10 +15,11 @@ export function matchSubscription(input: {
   money: Money;
   renewalDate: Date | null;
 }): MatchDecision {
-  const vendorKey = input.vendorNormalized.toLowerCase();
+  // Case, punctuation and spacing never make two names different vendors.
+  const vendorKey = vendorMatchKey(input.vendorNormalized);
   const candidate = input.candidates.find(
     (item) =>
-      item.vendorNormalized.toLowerCase() === vendorKey &&
+      vendorMatchKey(item.vendorNormalized) === vendorKey &&
       item.status !== "DISMISSED" &&
       item.status !== "CANCELED",
   );

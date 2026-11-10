@@ -18,7 +18,8 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "worker": "tsx src/infrastructure/jobs/worker.ts",
-    "fx:refresh": "tsx src/infrastructure/jobs/run-fx-refresh.ts"
+    "fx:refresh": "tsx src/infrastructure/jobs/run-fx-refresh.ts",
+    "vendors:recase": "tsx src/infrastructure/jobs/run-vendor-recase.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
