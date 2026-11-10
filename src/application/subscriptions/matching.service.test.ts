@@ -74,6 +74,25 @@ describe("subscription matching", () => {
     expect(decision.kind).toBe("no_match");
   });
 
+  it("matches the same vendor whatever its casing or punctuation", () => {
+    for (const stored of ["Xplace", "XPLACE", "xplace", "XPlace."]) {
+      const decision = matchSubscription({
+        candidates: [record({ vendorNormalized: stored, vendorRaw: stored })],
+        vendorNormalized: "XPlace",
+        money: new Money(1549, "USD"),
+        renewalDate: new Date("2026-10-02"),
+      });
+      expect(decision.kind, stored).toBe("duplicate");
+    }
+    const spaced = matchSubscription({
+      candidates: [record({ vendorNormalized: "Zebra Fitness Club" })],
+      vendorNormalized: "Zebra-Fitness  Club",
+      money: new Money(1549, "USD"),
+      renewalDate: new Date("2026-10-02"),
+    });
+    expect(spaced.kind).toBe("duplicate");
+  });
+
   it("returns no_match when the vendor is unknown", () => {
     const decision = matchSubscription({
       candidates: [record()],

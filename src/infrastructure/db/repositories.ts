@@ -23,6 +23,7 @@ import type {
   VendorAliasRepository,
 } from "@/domain/repositories";
 import type { FxRate } from "@/domain/ports";
+import { vendorMatchKey } from "@/domain/value-objects/vendor-name";
 import { prisma } from "@/infrastructure/db/prisma";
 
 export class PrismaSubscriptionRepository implements SubscriptionRepository {
@@ -45,14 +46,20 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
     return prisma.subscription.findFirst({ where: { id, userId } });
   }
 
-  findActiveByVendor(userId: string, vendorNormalized: string): Promise<SubscriptionRecord[]> {
-    return prisma.subscription.findMany({
+  /**
+   * Matches on `vendorMatchKey`, not the stored spelling: vendor names keep the casing they
+   * were written in, so an exact (case-sensitive) column match would miss "Xplace" vs "XPlace"
+   * and create a duplicate. One user's open subscriptions are few, so they are filtered here.
+   */
+  async findActiveByVendor(userId: string, vendorNormalized: string): Promise<SubscriptionRecord[]> {
+    const key = vendorMatchKey(vendorNormalized);
+    const rows = await prisma.subscription.findMany({
       where: {
         userId,
-        vendorNormalized,
         status: { in: ["ACTIVE", "INACTIVE", "PENDING_REVIEW"] },
       },
     });
+    return rows.filter((row) => vendorMatchKey(row.vendorNormalized) === key);
   }
 
   create(input: CreateSubscriptionInput): Promise<SubscriptionRecord> {

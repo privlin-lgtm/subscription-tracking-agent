@@ -1,7 +1,7 @@
 import { EventType, ReviewDecisionType, SubscriptionStatus } from "@prisma/client";
 import { NotFoundError, ValidationError } from "@/domain/errors";
 import { minorToMajorUnits, Money } from "@/domain/value-objects/money";
-import { normalizeVendorKey, titleCaseVendor } from "@/domain/value-objects/vendor-name";
+import { vendorDisplayName } from "@/domain/value-objects/vendor-name";
 import type { Clock } from "@/domain/ports";
 import type {
   AuditRecord,
@@ -142,7 +142,7 @@ export class SubscriptionService {
     }
 
     const money = Money.fromMajor(input.priceAmount, input.currency);
-    const vendorNormalized = titleCaseVendor(normalizeVendorKey(vendorRaw) || vendorRaw);
+    const vendorNormalized = vendorDisplayName(vendorRaw);
     const nextRenewalDate = parseOptionalDate(input.nextRenewalDate);
 
     return this.subscriptions.applyWrite({
@@ -180,7 +180,7 @@ export class SubscriptionService {
         throw new ValidationError("Vendor is required");
       }
       data.vendorRaw = vendorRaw;
-      data.vendorNormalized = titleCaseVendor(normalizeVendorKey(vendorRaw) || vendorRaw);
+      data.vendorNormalized = vendorDisplayName(vendorRaw);
     }
 
     if (input.billingCycle !== undefined) {

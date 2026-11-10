@@ -117,6 +117,67 @@ function buildHarness(fixtures: PipelineFixture[]) {
   return { pipeline, subscriptions, processedEmails, notifications, auditRows };
 }
 
+describe("subscription pipeline with vendor names that keep their casing", () => {
+  const receipt = (id: string, vendor: string): PipelineFixture => ({
+    name: id,
+    message: {
+      id,
+      historyId: "1",
+      threadId: `thread_${id}`,
+      subject: `Receipt ${id}`,
+      sender: "billing@example.com",
+      snippet: "receipt",
+      bodyText: "",
+      internalDate: new Date("2026-09-01"),
+    },
+    extraction: {
+      isSubscription: true,
+      isCancellation: false,
+      vendor,
+      priceAmount: 49,
+      currency: "ILS",
+      billingCycle: "monthly",
+      renewalDate: new Date("2026-10-01"),
+      confidence: 0.95,
+    },
+  });
+
+  it("stores an uncatalogued vendor the way the email wrote it", async () => {
+    const first = receipt("msg_x1", "XPlace");
+    const { pipeline, subscriptions } = buildHarness([first]);
+
+    await pipeline.processMessage(USER_ID, first.message, "10");
+
+    expect([...subscriptions.records.values()].map((item) => item.vendorNormalized)).toEqual(["XPlace"]);
+  });
+
+  it("does not create a second subscription when only the casing differs", async () => {
+    const fixtures = [receipt("msg_x1", "XPlace"), receipt("msg_x2", "XPLACE"), receipt("msg_x3", "xplace")];
+    const { pipeline, subscriptions } = buildHarness(fixtures);
+    // A row saved before casing was kept, title-cased the old way.
+    await subscriptions.create({
+      userId: USER_ID,
+      vendorNormalized: "Xplace",
+      vendorRaw: "XPlace",
+      status: SubscriptionStatus.ACTIVE,
+      priceAmountCents: 4900,
+      priceCurrency: "ILS",
+      billingCycle: "MONTHLY",
+      nextRenewalDate: new Date("2026-10-01"),
+      lastSeenEmailId: null,
+      confidenceScore: 1,
+    });
+
+    for (const fixture of fixtures) {
+      await pipeline.processMessage(USER_ID, fixture.message, "10");
+    }
+
+    const records = [...subscriptions.records.values()];
+    expect(records).toHaveLength(1);
+    expect(records[0].vendorNormalized).toBe("Xplace");
+  });
+});
+
 describe("subscription pipeline (fixture-driven)", () => {
   it("creates a new ACTIVE subscription on first receipt, atomically with its event and audit entry", async () => {
     const { pipeline, subscriptions, processedEmails, auditRows } = buildHarness([NEW_SUBSCRIPTION]);

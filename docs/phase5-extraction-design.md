@@ -76,7 +76,7 @@ This directly resolves architecture-review finding #9 (uncalibrated LLM confiden
 
 1. **Exact match** — normalized vendor key (`lowercased, protocol/www stripped, punctuation collapsed`) looked up in the alias table. Highest trust; contributes to confidence boost above.
 2. **Fuzzy fallback** — Dice's coefficient (bigram overlap) against all known canonical names, threshold `0.88` (configurable via `VENDOR_FUZZY_MATCH_THRESHOLD`). A fuzzy hit is never auto-applied — it always routes to `PENDING_REVIEW`, resolving architecture-review finding #4 (no silent vendor merges).
-3. **Unmatched** — title-cased raw vendor name used as a provisional canonical name; also routed to review unless the extraction is otherwise high-confidence and not previously seen (new-vendor case still requires an ISO currency and a plausible date, or it lands in review anyway).
+3. **Unmatched** — the raw vendor name, with its own casing kept, used as a provisional canonical name (title-cased only when it is written all in upper or all in lower case; see "Vendor name casing" in [technical-design.md](technical-design.md)); also routed to review unless the extraction is otherwise high-confidence and not previously seen (new-vendor case still requires an ISO currency and a plausible date, or it lands in review anyway).
 
 ## 6. Duplicate / Renewal / Price-Change Matching
 

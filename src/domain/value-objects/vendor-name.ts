@@ -16,6 +16,55 @@ export function titleCaseVendor(raw: string): string {
     .join(" ");
 }
 
+/**
+ * The name shown for a vendor that is not in the catalogue: what the user typed or the email
+ * said, with its casing kept.
+ *
+ * 1. Trim, collapse runs of whitespace to one space, and drop a leading "http(s)://" / "www.".
+ * 2. A name with both upper- and lower-case letters ("XPlace", "Apple TV", "iHerb") is kept as
+ *    written.
+ * 3. A name with no cased letters, or with any non-ASCII letter (Hebrew, accents), is kept as
+ *    written: title-casing goes through `normalizeVendorKey`, which would drop those letters.
+ * 4. Only a name written entirely in lower case or entirely in upper case ("netflix",
+ *    "NETFLIX.COM") is title-cased, the way every name used to be ("Netflix", "Netflix Com").
+ *
+ * Known limit of rule 4: a bare acronym typed in capitals ("HBO") still becomes "Hbo", because
+ * it cannot be told apart from a shouting email sender.
+ */
+export function vendorDisplayName(raw: string): string {
+  const cleaned = raw
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "");
+  if (!cleaned) {
+    return raw.trim().replace(/\s+/g, " ");
+  }
+  const hasUpper = cleaned !== cleaned.toLowerCase();
+  const hasLower = cleaned !== cleaned.toUpperCase();
+  const singleCase = hasUpper !== hasLower;
+  if (!singleCase || /[^\x00-\x7F]/.test(cleaned)) {
+    return cleaned;
+  }
+  return titleCaseVendor(normalizeVendorKey(cleaned) || cleaned);
+}
+
+/**
+ * Key for deciding whether two vendor names are the same vendor. Ignores case, punctuation
+ * and spacing, so "XPlace", "Xplace" and "XPLACE." never become separate subscriptions just
+ * because of how they were written. For plain ASCII names it equals `normalizeVendorKey`;
+ * unlike that function it keeps non-Latin letters, so two different Hebrew names stay apart.
+ */
+export function vendorMatchKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/https?:\/\//g, "")
+    .replace(/^www\./, "")
+    .replace(/[^\p{L}\p{N}+]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function diceCoefficient(a: string, b: string): number {
   const left = normalizeVendorKey(a);
   const right = normalizeVendorKey(b);

@@ -1,5 +1,5 @@
 import { BillingCycle } from "@prisma/client";
-import { diceCoefficient, normalizeVendorKey, titleCaseVendor } from "@/domain/value-objects/vendor-name";
+import { diceCoefficient, normalizeVendorKey, vendorDisplayName } from "@/domain/value-objects/vendor-name";
 import type { VendorAliasRepository } from "@/domain/repositories";
 
 export type VendorNormalization =
@@ -33,7 +33,8 @@ export class VendorNormalizationService {
       return { kind: "fuzzy", canonical: best.name, score: best.score };
     }
 
-    return { kind: "unmatched", canonical: titleCaseVendor(key || rawVendor) };
+    // Not in the catalogue: keep the name's own casing (see `vendorDisplayName` for the rule).
+    return { kind: "unmatched", canonical: vendorDisplayName(rawVendor) };
   }
 }
 

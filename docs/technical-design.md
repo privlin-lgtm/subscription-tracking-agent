@@ -327,6 +327,23 @@ A cycle is never guessed. A value the code does not recognise is treated like `C
 **Not done.** A yearly view of the same total.
 | #7 Retention/deletion policy | **Partially addressed in Phase 3** — `EmailSnapshot.expiresAt` plus a daily purge job, and cascading deletes on user removal. A documented GDPR TTL/right-to-erasure policy is still required before Phase 8. |
 
+## Vendor name casing
+
+**Goal.** A vendor that is not in the catalogue shows the way it was written ("XPlace", "WalkFit", "Apple TV"). Before 2026-11-10 every such name was title-cased ("Xplace", "Walkfit", "Apple Tv").
+
+**Rule** (`vendorDisplayName` in `src/domain/value-objects/vendor-name.ts`), used for manual create/edit and for the unmatched path of `VendorNormalizationService`:
+
+1. Trim, collapse runs of whitespace to one space, drop a leading `http(s)://` and `www.`.
+2. A name with both upper- and lower-case letters is kept as written.
+3. A name with no cased letters, or with any non-ASCII letter (Hebrew, accents), is kept as written.
+4. Only a name written entirely in lower case or entirely in upper case is title-cased the old way ("netflix" → "Netflix", "NETFLIX.COM" → "Netflix Com"). Known limit: a bare acronym typed in capitals ("HBO") becomes "Hbo".
+
+Catalogue (alias table) matches still get the catalogue's name, and names edited in the review queue are stored as entered.
+
+**Duplicate matching ignores casing.** `matchSubscription` and `SubscriptionRepository.findActiveByVendor` compare `vendorMatchKey` (lower case, punctuation and spacing collapsed, non-Latin letters kept), not the stored spelling. The Prisma `findActiveByVendor` used to be an exact, case-sensitive column match; it now loads the user's open subscriptions and filters on the key, so "XPlace" in a new email matches a stored "Xplace".
+
+**Existing rows.** `npm run vendors:recase -- --dry-run` lists the stored names it would rewrite, and `-- --apply` rewrites them (`src/infrastructure/jobs/run-vendor-recase.ts`, logic in `src/application/subscriptions/vendor-recase.ts`). A row is changed only if its stored name is exactly what the old rule made from `vendorRaw` and is not a catalogue name, so catalogue names and review edits are never touched. Each change goes through `applyWrite`, leaving an `UPDATED` event and a `subscription.vendor_recase` audit entry (actor `system`). Running it twice changes nothing the second time.
+
 ## Currency conversion for the spend total (review finding #6)
 
 **Goal.** A user whose subscriptions are billed in several currencies sees one approximate total in their display currency, next to the unchanged per-currency breakdown, labelled with the date of the rates used. Stored subscription amounts are never changed.

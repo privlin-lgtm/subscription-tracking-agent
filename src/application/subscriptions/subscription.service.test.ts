@@ -37,6 +37,21 @@ describe("SubscriptionService persistence", () => {
     expect(subscriptions.records.size).toBe(1);
   });
 
+  it("keeps the vendor name's casing as typed, on create and on edit", async () => {
+    const { svc } = service();
+    const base = { priceAmount: 10, currency: "ILS", billingCycle: "monthly" as const };
+
+    expect((await svc.create(USER_ID, { ...base, vendor: "XPlace" })).vendorNormalized).toBe("XPlace");
+    expect((await svc.create(USER_ID, { ...base, vendor: "  Apple   TV " })).vendorNormalized).toBe("Apple TV");
+    expect((await svc.create(USER_ID, { ...base, vendor: "walkfit" })).vendorNormalized).toBe("Walkfit");
+    expect((await svc.create(USER_ID, { ...base, vendor: "NETFLIX.COM" })).vendorNormalized).toBe("Netflix Com");
+
+    const created = await svc.create(USER_ID, { ...base, vendor: "Walkfit" });
+    const renamed = await svc.update(USER_ID, created.id, { vendor: "WalkFit" });
+    expect(renamed.vendorNormalized).toBe("WalkFit");
+    expect(renamed.vendorRaw).toBe("WalkFit");
+  });
+
   it("records PRICE_CHANGED and a price-change row when the amount changes", async () => {
     const { svc } = service();
     const created = await svc.create(USER_ID, {
