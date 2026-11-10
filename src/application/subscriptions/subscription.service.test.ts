@@ -204,7 +204,14 @@ describe("SubscriptionService persistence", () => {
     await svc.cancel(USER_ID, toCancel.id);
 
     const summary = await svc.spendSummary(USER_ID);
-    expect(summary).toEqual({ mixed: false, currency: "USD", totalCents: 1000, subscriptionCount: 1 });
+    expect(summary).toEqual({
+      period: "monthly",
+      excludedCount: 0,
+      mixed: false,
+      currency: "USD",
+      totalCents: 1000,
+      subscriptionCount: 1,
+    });
 
     const fetched = await subscriptions.listByUser(USER_ID, [SubscriptionStatus.ACTIVE, SubscriptionStatus.INACTIVE]);
     expect(fetched.map((item) => item.vendorNormalized)).toEqual(["Active"]);
